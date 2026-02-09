@@ -1,0 +1,92 @@
+/* productManagement.css */
+.pm-container {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  overflow: hidden;
+}
+
+/* Tabs */
+.pm-tabs {
+  display: flex;
+  border-bottom: 1px solid #e5e7eb;
+  background: #f9fafb;
+}
+
+.pm-tab {
+  padding: 15px 25px;
+  cursor: pointer;
+  font-weight: 500;
+  color: #6b7280;
+  border-bottom: 3px solid transparent;
+  transition: 0.2s;
+}
+
+.pm-tab:hover { background: #f3f4f6; color: #374151; }
+
+.pm-tab.active {
+  border-bottom-color: #3b82f6;
+  color: #3b82f6;
+  background: white;
+  font-weight: 600;
+}
+
+.pm-content { padding: 25px; }
+
+/* Category List */
+.cat-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 15px;
+  margin-top: 20px;
+}
+
+.cat-card {
+  border: 1px solid #e5e7eb;
+  padding: 15px;
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #fff;
+  transition: transform 0.2s;
+}
+
+.cat-card:hover { border-color: #3b82f6; }
+
+.cat-name { font-weight: 600; color: #1f2937; }
+.cat-count { font-size: 0.8rem; color: #9ca3af; margin-top: 2px; }
+
+.btn-icon {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1.1rem;
+  padding: 5px;
+  color: #9ca3af;
+  transition: 0.2s;
+}
+.btn-icon:hover { color: #ef4444; }
+
+/* Product Table */
+.pm-table { width: 100%; border-collapse: collapse; }
+.pm-table th { text-align: left; padding: 12px; background: #f9fafb; font-size: 0.85rem; color: #6b7280; text-transform: uppercase; }
+.pm-table td { padding: 12px; border-bottom: 1px solid #f3f4f6; vertical-align: middle; color: #374151; }
+
+.prod-cell { display: flex; align-items: center; gap: 10px; }
+.prod-img { width: 40px; height: 40px; background: #e5e7eb; border-radius: 4px; object-fit: cover; }
+.prod-info div { font-weight: 600; font-size: 0.95rem; }
+.prod-info span { font-size: 0.8rem; color: #6b7280; }
+
+.action-menu { display: flex; gap: 5px; }
+
+/* Status Badges */
+.p-badge { padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; }
+.pb-live { background: #dcfce7; color: #15803d; }
+.pb-pending { background: #fef9c3; color: #a16207; }
+.pb-flagged { background: #fee2e2; color: #b91c1c; }
+
+/* Modal */
+.input-group { margin-bottom: 15px; }
+.input-group label { display: block; margin-bottom: 5px; font-weight: 500; font-size: 0.9rem; }
+.input-group input { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; box-sizing: border-box; }

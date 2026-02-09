@@ -1,0 +1,158 @@
+/* manageuser.css */
+.user-mgmt-container {
+  padding: 20px;
+  background-color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.mgmt-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+/* Filters */
+.filter-tabs {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.filter-btn {
+  padding: 8px 16px;
+  border: 1px solid #e5e7eb;
+  background: white;
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: #6b7280;
+  transition: all 0.2s;
+}
+
+.filter-btn:hover { background: #f9fafb; }
+.filter-btn.active {
+  background: #3b82f6;
+  color: white;
+  border-color: #3b82f6;
+}
+
+/* Table Styles */
+.user-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.user-table th {
+  text-align: left;
+  padding: 12px;
+  background: #f9fafb;
+  color: #6b7280;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.user-table td {
+  padding: 12px;
+  border-bottom: 1px solid #f3f4f6;
+  color: #1f2937;
+}
+
+.user-row:hover {
+  background-color: #f8fafc;
+  cursor: pointer;
+}
+
+/* Badges */
+.status-badge {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+.status-active { background: #dcfce7; color: #15803d; }
+.status-pending { background: #fef9c3; color: #a16207; }
+.status-banned { background: #fee2e2; color: #b91c1c; }
+.status-rejected { background: #f3f4f6; color: #6b7280; }
+
+.role-badge {
+  font-size: 0.8rem;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #4b5563;
+}
+
+/* Modal Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  backdrop-filter: blur(2px);
+}
+
+.modal-content {
+  background: white;
+  width: 500px;
+  border-radius: 12px;
+  padding: 25px;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 10px;
+}
+
+.action-bar {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 15px;
+  border-top: 1px solid #eee;
+}
+
+.btn {
+  padding: 10px 15px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-weight: 500;
+  flex: 1;
+}
+
+.btn-primary { background: #3b82f6; color: white; }
+.btn-success { background: #10b981; color: white; }
+.btn-danger { background: #ef4444; color: white; }
+.btn-secondary { background: #e5e7eb; color: #374151; }
+
+.form-field { margin-bottom: 15px; }
+.form-field label { display: block; font-size: 0.9rem; color: #6b7280; margin-bottom: 5px; }
+.form-field input, .form-field select {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  box-sizing: border-box;
+}
+
+.log-entry {
+  font-size: 0.8rem;
+  color: #666;
+  background: #f9fafb;
+  padding: 5px;
+  margin-top: 5px;
+  border-left: 2px solid #ccc;
+}

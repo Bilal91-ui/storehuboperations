@@ -1,0 +1,95 @@
+/* pricing.css */
+.pricing-container {
+    background-color: #fff;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.pricing-header {
+    margin-bottom: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+/* Table Styles specific to Pricing */
+.price-original {
+    text-decoration: line-through;
+    color: #999;
+    font-size: 0.9em;
+    margin-right: 8px;
+}
+
+.price-final {
+    font-weight: bold;
+    color: #2c3e50;
+    font-size: 1.1em;
+}
+
+.promo-badge {
+    background-color: #e6f7ff;
+    color: #1890ff;
+    border: 1px solid #91d5ff;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    display: inline-block;
+    margin-top: 4px;
+}
+
+.no-promo {
+    color: #999;
+    font-style: italic;
+    font-size: 0.9rem;
+}
+
+/* Modal Form Styles */
+.pricing-form {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.form-group label {
+    font-weight: 500;
+    font-size: 0.9rem;
+    color: #444;
+}
+
+.form-group input {
+    padding: 8px 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 1rem;
+}
+
+.form-row {
+    display: flex;
+    gap: 15px;
+}
+
+.form-row .form-group {
+    flex: 1;
+}
+
+.calculated-price {
+    background-color: #f9f9f9;
+    padding: 10px;
+    border-radius: 4px;
+    text-align: center;
+    border: 1px dashed #ccc;
+    margin-top: 5px;
+}
+
+.calculated-price span {
+    color: #27ae60;
+    font-weight: bold;
+    font-size: 1.2rem;
+}

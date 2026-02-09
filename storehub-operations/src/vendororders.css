@@ -1,0 +1,80 @@
+/* vendorOrders.css */
+.orders-container {
+    background-color: #fff;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.orders-header {
+    margin-bottom: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+/* Status Badges */
+.badge {
+    padding: 5px 10px;
+    border-radius: 15px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: capitalize;
+}
+
+.badge-pending { background-color: #fff3cd; color: #856404; }
+.badge-processing { background-color: #cce5ff; color: #004085; }
+.badge-shipped { background-color: #d1ecf1; color: #0c5460; }
+.badge-completed { background-color: #d4edda; color: #155724; }
+.badge-cancelled { background-color: #f8d7da; color: #721c24; }
+
+/* Order Details Modal */
+.order-details-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.detail-group label {
+    display: block;
+    font-size: 0.8rem;
+    color: #666;
+    margin-bottom: 4px;
+}
+
+.detail-group p {
+    font-weight: 500;
+    margin: 0;
+}
+
+.order-items-list {
+    background: #f9f9f9;
+    padding: 15px;
+    border-radius: 6px;
+    margin: 15px 0;
+}
+
+.order-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid #eee;
+}
+
+.order-item:last-child {
+    border-bottom: none;
+}
+
+.modal-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+    border-top: 1px solid #eee;
+    padding-top: 20px;
+}
+
+.btn-accept { background-color: #28a745; color: white; }
+.btn-decline { background-color: #dc3545; color: white; }
+.btn-process { background-color: #17a2b8; color: white; }
+.btn-complete { background-color: #28a745; color: white; }

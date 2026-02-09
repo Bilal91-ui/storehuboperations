@@ -1,0 +1,61 @@
+@import url("https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@300;400;500;600;700&display=swap");
+
+/* Reuse auth-overlay and other common styles from login.css */
+.signup-modal {
+  max-width: 520px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+/* Scrollbar styling for signup modal */
+.signup-modal::-webkit-scrollbar {
+  width: 6px;
+}
+
+.signup-modal::-webkit-scrollbar-track {
+  background: #fafaf8;
+}
+
+.signup-modal::-webkit-scrollbar-thumb {
+  background: #e8e6e1;
+  border-radius: 10px;
+}
+
+.signup-modal::-webkit-scrollbar-thumb:hover {
+  background: #d4a574;
+}
+
+.form-select {
+  padding: 1rem 1.25rem;
+  border: 1.5px solid #e8e6e1;
+  border-radius: 12px;
+  font-size: 1rem;
+  font-family: "Inter", sans-serif;
+  transition: all 0.3s ease;
+  background-color: #fafaf8;
+  cursor: pointer;
+  color: #2c2c2c;
+}
+
+.form-select:focus {
+  outline: none;
+  border-color: #d4a574;
+  background-color: #ffffff;
+  box-shadow: 0 0 0 4px rgba(212, 165, 116, 0.1);
+}
+
+.form-select option {
+  padding: 0.5rem;
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .signup-modal {
+    max-width: 95%;
+    max-height: 85vh;
+  }
+
+  .form-select {
+    padding: 0.875rem 1rem;
+  }
+}

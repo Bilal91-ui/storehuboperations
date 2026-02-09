@@ -1,0 +1,229 @@
+@import url("https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@300;400;500;600;700&display=swap");
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --color-primary: #1a1a1a;
+  --color-accent: #d4a574;
+  --color-text: #2c2c2c;
+  --color-white: #ffffff;
+  --color-background: #fafaf8;
+  --color-border: #e8e6e1;
+  --font-serif: "Playfair Display", serif;
+  --font-sans: "Inter", sans-serif;
+  --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-background);
+  color: var(--color-text);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.app {
+  min-height: 100vh;
+}
+
+.header {
+  background-color: rgba(255, 255, 255, 0.95);
+  color: var(--color-primary);
+  padding: 1.5rem 0;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: var(--shadow-sm);
+  border-bottom: 1px solid var(--color-border);
+  backdrop-filter: blur(10px);
+}
+
+.header-content {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.logo {
+  font-family: var(--font-serif);
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--color-primary);
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.btn-primary,
+.btn-secondary {
+  padding: 0.75rem 1.75rem;
+  border: none;
+  border-radius: 50px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 500;
+  font-family: var(--font-sans);
+  transition: var(--transition);
+  letter-spacing: 0.01em;
+}
+
+.btn-primary {
+  background-color: #965a38;
+  color: var(--color-white);
+}
+
+.btn-primary:hover {
+  background-color: #965a38;
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.btn-secondary {
+  background-color: transparent;
+  color: var(--color-primary);
+  border: 1.5px solid var(--color-border);
+}
+
+.btn-secondary:hover {
+  border-color: var(--color-primary);
+  background-color: var(--color-background);
+}
+
+.main-content {
+  padding: 2rem;
+  max-width: 800px;
+  margin: 0 auto;
+  position: relative;
+}
+
+.main-content h2 {
+  font-family: var(--font-serif);
+  font-size: 2rem;
+  font-weight: 600;
+  color: var(--color-text);
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.role-selection {
+  display: flex;
+  justify-content: center;
+  gap: 2rem;
+  flex-wrap: wrap;
+}
+
+.role-button {
+  padding: 1rem 2rem;
+  border: 2px solid var(--color-accent);
+  border-radius: 12px;
+  background-color: var(--color-white);
+  color: var(--color-accent);
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+  font-family: var(--font-sans);
+}
+
+.role-button:hover {
+  background-color: var(--color-accent);
+  color: var(--color-white);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+/* 1. Make the form the "anchor" for positioning */
+.signup-form {
+  position: relative; /* Essential! */
+  padding: 40px;      /* Ensure there is space inside so text doesn't hit the edges */
+  /* ... keep your other existing styles like width, background, etc. */
+}
+
+/* 2. Position the button absolutely within the form */
+.close-btn {
+  position: absolute;
+  top: 15px;         /* Distance from the top edge */
+  right: 15px;       /* Distance from the right edge */
+  
+  /* Styling to make it look clean */
+  background: transparent;
+  border: none;
+  font-size: 1.5rem; /* Make the X visible */
+  font-weight: bold;
+  cursor: pointer;
+  color: #666;
+  line-height: 1;
+  transition: color 0.2s;
+}
+
+/* Optional: Hover effect */
+.close-btn:hover {
+  color: #000; /* Darker color on hover */
+}
+
+@media (max-width: 768px) {
+  .header-content {
+    padding: 0 1rem;
+  }
+
+  .logo {
+    font-size: 1.5rem;
+  }
+
+  .btn-primary,
+  .btn-secondary {
+    padding: 0.625rem 1.25rem;
+    font-size: 0.875rem;
+  }
+
+  .main-content {
+    padding: 1.5rem 1rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .role-selection {
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .role-button {
+    width: 100%;
+    max-width: 300px;
+  }
+}
+
+@media (max-width: 480px) {
+  .header-actions {
+    gap: 0.5rem;
+  }
+
+  .btn-secondary {
+    padding: 0.625rem 1rem;
+  }
+}
+.app {
+  min-height: 100vh;
+  width: 100%;
+  
+  /* A modern blue/purple gradient suitable for business */
+  background: radial-gradient(circle at 10% 20%, rgb(69, 86, 169) 0%, rgb(31, 33, 38) 90.2%);
+  
+  display: flex;
+  flex-direction: column;
+}

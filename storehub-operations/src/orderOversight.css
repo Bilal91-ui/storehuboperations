@@ -1,0 +1,97 @@
+/* orderOversight.css */
+.orders-container {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  padding: 20px;
+}
+
+.orders-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+/* Tabs */
+.order-tabs {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 10px;
+}
+
+.tab-btn {
+  padding: 8px 16px;
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  cursor: pointer;
+  font-weight: 500;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.tab-btn:hover { background: #f3f4f6; }
+.tab-btn.active {
+  background: #eff6ff;
+  color: #3b82f6;
+  font-weight: 600;
+}
+
+.tab-btn.dispute-tab { color: #ef4444; }
+.tab-btn.dispute-tab.active { background: #fef2f2; color: #b91c1c; }
+
+/* Table */
+.orders-table { width: 100%; border-collapse: collapse; }
+.orders-table th { text-align: left; padding: 12px; background: #f9fafb; color: #6b7280; font-size: 0.85rem; text-transform: uppercase; }
+.orders-table td { padding: 12px; border-bottom: 1px solid #f3f4f6; color: #1f2937; vertical-align: middle; }
+.orders-table tr:hover { background: #f8fafc; }
+
+/* Status Badges */
+.status-pill { padding: 4px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; display: inline-block; }
+.sp-pending { background: #fef9c3; color: #a16207; }
+.sp-processing { background: #dbeafe; color: #1e40af; }
+.sp-delivered { background: #dcfce7; color: #15803d; }
+.sp-cancelled { background: #f3f4f6; color: #4b5563; }
+.sp-dispute { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }
+
+/* Modal & Action Panel */
+.modal-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5); z-index: 1000;
+  display: flex; justify-content: center; align-items: center;
+}
+
+.modal-content {
+  background: white; width: 600px; max-height: 90vh; overflow-y: auto;
+  border-radius: 10px; padding: 25px; box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+}
+
+.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+.detail-box label { display: block; font-size: 0.8rem; color: #6b7280; margin-bottom: 4px; text-transform: uppercase; }
+.detail-box div { font-weight: 500; color: #1f2937; }
+
+.issue-box {
+  background: #fef2f2; border: 1px solid #fecaca; padding: 15px;
+  border-radius: 6px; margin-bottom: 20px;
+}
+.issue-title { color: #b91c1c; font-weight: 700; margin-bottom: 5px; display: flex; align-items: center; gap: 5px; }
+
+.admin-actions {
+  border-top: 1px solid #e5e7eb; padding-top: 20px; margin-top: 20px;
+}
+.action-buttons { display: flex; gap: 10px; margin-top: 15px; }
+
+.btn-action {
+  flex: 1; padding: 10px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 0.9rem;
+}
+.btn-refund { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+.btn-reassign { background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
+.btn-resolve { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+
+.log-section {
+  margin-top: 20px; background: #f9fafb; padding: 10px; border-radius: 6px; font-size: 0.85rem;
+}
+.log-item { margin-bottom: 5px; color: #4b5563; border-left: 2px solid #ccc; padding-left: 8px; }
