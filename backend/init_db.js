@@ -27,7 +27,20 @@ async function init() {
     `;
 
     await connection.query(createTableSql);
-    console.log('✅ Database `storehub` and table `products` created or already exist');
+    // Create cart table to store items added to cart
+    const createCartTable = `
+      CREATE TABLE IF NOT EXISTS cart (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        product_id INT NOT NULL,
+        quantity INT DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+      );
+    `;
+
+    await connection.query(createCartTable);
+
+    console.log('✅ Database `storehub` and tables `products` and `cart` created or already exist');
     process.exit(0);
   } catch (err) {
     console.error('❌ Failed to initialize database:', err.message || err);

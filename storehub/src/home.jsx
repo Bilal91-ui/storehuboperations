@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import "./home.css"
 import Login from "./login"
 import Signup from "./signup"
@@ -11,7 +11,7 @@ import OrderDetails from "./OrderDetails"
 import AccountSettings from "./accountsettings"
 
 function Home() {
-  
+
   const [isCartOpen, setIsCartOpen] = useState(false)
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false)
   const [isOrdersSidebarOpen, setIsOrdersSidebarOpen] = useState(false)
@@ -27,61 +27,73 @@ function Home() {
   const [user, setUser] = useState(null)
   const [featuredProducts, setFeaturedProducts] = useState([])
 
-  const [cartItems, setCartItems] = useState([
-    {
-      id: "1",
-      name: "Wireless Headphones",
-      price: 89.99,
-      quantity: 1,
-      image: "/wireless-headphones.png",
-    },
-    {
-      id: "2",
-      name: "Smart Watch Pro",
-      price: 199.99,
-      quantity: 2,
-      image: "/smartwatch-lifestyle.png",
-    },
-  ])
+  const [cartItems, setCartItems] = useState([])
 
   const categories = [
     { id: "1", name: "Meat", },
-    { id: "2", name: "Fruits",  },
-    { id: "3", name: "Vegatables",},
+    { id: "2", name: "Fruits", },
+    { id: "3", name: "Vegatables", },
     { id: "4", name: "Dairy Products" },
-    { id: "5", name: "Bakery and Breakfast"},
+    { id: "5", name: "Bakery and Breakfast" },
     { id: "6", name: "Beverages" },
-    { id: "7", name: "Tea and Coffee",},
-    { id: "8", name: "Groceries"},
+    { id: "7", name: "Tea and Coffee", },
+    { id: "8", name: "Groceries" },
   ]
 
-  // Fetch products from database
-useEffect(() => {
-  const fetchProducts = async () => {
+  // Fetch cart items (used in multiple places)
+  const fetchCart = useCallback(async () => {
     try {
-      const response = await fetch("http://localhost:5000/api/products")
-      if (!response.ok) {
-        throw new Error("Failed to fetch products")
+      const res = await fetch("http://localhost:5000/api/cart")
+      if (!res.ok) {
+        console.error("Cart fetch failed, status", res.status)
+        return []
       }
-      const products = await response.json()
+      const data = await res.json()
 
-      // ✅ Map products to include full image URLs if they are stored as paths
-      const productsWithImageUrls = products.map(product => ({
-        ...product,
-        image: product.image
-          ? `http://localhost:5000${product.image}`  // full backend URL
-          : '/placeholder.svg'  // fallback if no image
+      const cartWithImages = data.map(item => ({
+        ...item,
+        quantity: Number(item.quantity) || 0,
+        image: item.image
+          ? `http://localhost:5000${item.image}`
+          : "/placeholder.svg"
       }))
 
-      setFeaturedProducts(productsWithImageUrls)
-    } catch (error) {
-      console.error("Error fetching products:", error)
-      setFeaturedProducts([])
+      setCartItems(cartWithImages)
+      return cartWithImages
+    } catch (err) {
+      console.error("Cart fetch error:", err)
+      return []
     }
-  }
+  }, [])
 
-  fetchProducts()
-}, [])
+  // Fetch products from database
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        const response = await fetch("http://localhost:5000/api/products")
+        if (!response.ok) {
+          throw new Error("Failed to fetch products")
+        }
+        const products = await response.json()
+
+        // ✅ Map products to include full image URLs if they are stored as paths
+        const productsWithImageUrls = products.map(product => ({
+          ...product,
+          image: product.image
+            ? `http://localhost:5000${product.image}`  // full backend URL
+            : '/placeholder.svg'  // fallback if no image
+        }))
+
+        setFeaturedProducts(productsWithImageUrls)
+      } catch (error) {
+        console.error("Error fetching products:", error)
+        setFeaturedProducts([])
+      }
+    }
+
+    fetchProducts()
+    fetchCart()
+  }, [fetchCart])
 
 
   const nearbyStores = [
@@ -118,21 +130,79 @@ useEffect(() => {
       distance: "1.5 km",
     },
   ]
+  const addToCart = async (productId) => {
+    try {
+      const resp = await fetch("http://localhost:5000/api/cart", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          product_id: productId,
+          quantity: 1
+        })
+      })
+      if (!resp.ok) {
+        console.error("Add to cart failed, status", resp.status)
+      }
 
-  const updateCartItemQuantity = (id, delta) => {
-    setCartItems((items) =>
-      items
-        .map((item) => (item.id === id ? { ...item, quantity: Math.max(0, item.quantity + delta) } : item))
-        .filter((item) => item.quantity > 0),
-    )
+      // refresh cart (do not auto-open drawer)
+      await fetchCart()
+    } catch (err) {
+      console.error("Add to cart error:", err)
+    }
+  }
+  const updateCartItemQuantity = async (id, delta) => {
+    console.log("updateCartItemQuantity called", id, delta)
+    try {
+      const item = cartItems.find((i) => i.id === id)
+      if (!item) return
+      const currentQty = Number(item.quantity) || 0
+      const newQty = Math.max(0, currentQty + delta)
+
+      if (newQty === 0) {
+        // delegate to remove handler which refreshes
+        await removeCartItem(id)
+        return
+      }
+
+      const resp = await fetch(`http://localhost:5000/api/cart/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ quantity: newQty })
+      })
+
+      if (!resp.ok) {
+        console.error("Update cart failed, status", resp.status)
+        return
+      }
+
+      await fetchCart()
+    } catch (err) {
+      console.error("Update cart error:", err)
+    }
   }
 
-  const removeCartItem = (id) => {
-    setCartItems((items) => items.filter((item) => item.id !== id))
+  const removeCartItem = async (id) => {
+    console.log("removeCartItem called", id)
+    try {
+      const resp = await fetch(`http://localhost:5000/api/cart/${id}`, {
+        method: "DELETE"
+      })
+
+      if (!resp.ok) {
+        console.error("Remove cart failed, status", resp.status)
+        return
+      }
+
+      // wait for the refreshed cart and close drawer if empty
+      const updated = await fetchCart()
+      if (!updated || updated.length === 0) setIsCartOpen(false)
+    } catch (err) {
+      console.error("Remove cart error:", err)
+    }
   }
 
-  const cartTotal = cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0)
-  const cartItemsCount = cartItems.reduce((sum, item) => sum + item.quantity, 0)
+  const cartTotal = cartItems.reduce((sum, item) => sum + (parseFloat(item.price) || 0) * (item.quantity || 0), 0)
+  const cartItemsCount = cartItems.reduce((sum, item) => sum + (item.quantity || 0), 0)
 
   const handleLoginSuccess = (userData) => {
     setUser(userData)
@@ -264,7 +334,12 @@ useEffect(() => {
                         <span className="price">Rs {product.price}</span>
                       )}
                     </div>
-                    <button className="add-to-cart-btn">Add to Cart</button>
+                    <button
+                      className="add-to-cart-btn"
+                      onClick={() => addToCart(product.id)}
+                    >
+                      Add to Cart
+                    </button>
                   </div>
                 </div>
               ))}
@@ -330,7 +405,12 @@ useEffect(() => {
                           <span className="price">Rs {product.price}</span>
                         )}
                       </div>
-                      <button className="add-to-cart-btn">Add to Cart</button>
+                      <button
+                        className="add-to-cart-btn"
+                        onClick={() => addToCart(product.id)}
+                      >
+                        Add to Cart
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -357,7 +437,7 @@ useEffect(() => {
                 <>
                   {cartItems.map((item) => (
                     <div key={item.id} className="cart-item">
-                      <img src={`${process.env.PUBLIC_URL}${item.image}`} alt={item.name} className="cart-item-image" onError={(e) => { e.target.src = `${process.env.PUBLIC_URL}/placeholder.svg` }} />
+                      <img className="cart-item-image" src={item.image} />
                       <div className="cart-item-info">
                         <h4>{item.name}</h4>
                         <p className="cart-item-price">Rs{item.price}</p>
@@ -477,7 +557,7 @@ useEffect(() => {
             </div>
             <div className="orders-sidebar-content">
               <div className="orders-sidebar-section">
-                <button 
+                <button
                   className="orders-sidebar-btn"
                   onClick={() => {
                     setIsOrdersSidebarOpen(false)
@@ -488,7 +568,7 @@ useEffect(() => {
                 </button>
               </div>
               <div className="orders-sidebar-section">
-                <button 
+                <button
                   className="orders-sidebar-btn"
                   onClick={() => {
                     setIsOrdersSidebarOpen(false)
@@ -499,7 +579,7 @@ useEffect(() => {
                 </button>
               </div>
               <div className="orders-sidebar-section">
-                <button 
+                <button
                   className="orders-sidebar-btn"
                   onClick={() => {
                     setIsOrdersSidebarOpen(false)
@@ -510,7 +590,7 @@ useEffect(() => {
                 </button>
               </div>
               <div className="orders-sidebar-section">
-                <button 
+                <button
                   className="orders-sidebar-btn logout-btn"
                   onClick={() => {
                     setIsOrdersSidebarOpen(false)
