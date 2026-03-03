@@ -52,7 +52,6 @@ function Home() {
 
       const cartWithImages = data.map(item => ({
         ...item,
-        quantity: Number(item.quantity) || 0,
         image: item.image
           ? `http://localhost:5000${item.image}`
           : "/placeholder.svg"
@@ -151,12 +150,10 @@ function Home() {
     }
   }
   const updateCartItemQuantity = async (id, delta) => {
-    console.log("updateCartItemQuantity called", id, delta)
     try {
       const item = cartItems.find((i) => i.id === id)
       if (!item) return
-      const currentQty = Number(item.quantity) || 0
-      const newQty = Math.max(0, currentQty + delta)
+      const newQty = Math.max(0, (item.quantity || 0) + delta)
 
       if (newQty === 0) {
         // delegate to remove handler which refreshes
@@ -182,7 +179,6 @@ function Home() {
   }
 
   const removeCartItem = async (id) => {
-    console.log("removeCartItem called", id)
     try {
       const resp = await fetch(`http://localhost:5000/api/cart/${id}`, {
         method: "DELETE"
