@@ -694,6 +694,19 @@ body {
   color: var(--color-accent);
   margin-bottom: 0.75rem;
   font-family: var(--font-serif);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.cart-item-price .discounted-price {
+  color: var(--color-accent);
+}
+
+.cart-item-price .original-price {
+  font-size: 1rem;
+  color: var(--color-text-light);
+  text-decoration: line-through;
 }
 
 .quantity-controls {

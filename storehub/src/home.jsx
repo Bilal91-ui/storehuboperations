@@ -43,12 +43,15 @@ function Home() {
   // Fetch cart items (used in multiple places)
   const fetchCart = useCallback(async () => {
     try {
+      console.log("Fetching cart from http://localhost:5000/api/cart")
       const res = await fetch("http://localhost:5000/api/cart")
+      console.log("Cart fetch response status:", res.status)
       if (!res.ok) {
         console.error("Cart fetch failed, status", res.status)
         return []
       }
       const data = await res.json()
+      console.log("Cart data received:", data)
 
       const cartWithImages = data.map(item => ({
         ...item,
@@ -131,7 +134,9 @@ function Home() {
     },
   ]
   const addToCart = async (productId) => {
+    console.log("addToCart called with productId:", productId)
     try {
+      console.log("Making fetch request to http://localhost:5000/api/cart")
       const resp = await fetch("http://localhost:5000/api/cart", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -140,8 +145,13 @@ function Home() {
           quantity: 1
         })
       })
+      console.log("Response status:", resp.status)
       if (!resp.ok) {
         console.error("Add to cart failed, status", resp.status)
+        const errorText = await resp.text()
+        console.error("Error response:", errorText)
+      } else {
+        console.log("Add to cart successful")
       }
 
       // refresh cart (do not auto-open drawer)
@@ -201,7 +211,15 @@ function Home() {
     }
   }
 
-  const cartTotal = cartItems.reduce((sum, item) => sum + (parseFloat(item.price) || 0) * (item.quantity || 0), 0)
+  const getEffectivePrice = (item) => {
+    // Use salePrice if it's set and less than the original price
+    if (item.salePrice && item.salePrice > 0 && item.salePrice < item.price) {
+      return item.salePrice
+    }
+    return item.price
+  }
+
+  const cartTotal = cartItems.reduce((sum, item) => sum + (parseFloat(getEffectivePrice(item)) || 0) * (item.quantity || 0), 0)
   const cartItemsCount = cartItems.reduce((sum, item) => sum + (item.quantity || 0), 0)
 
   const handleLoginSuccess = (userData) => {
@@ -440,7 +458,16 @@ function Home() {
                       <img className="cart-item-image" src={item.image} />
                       <div className="cart-item-info">
                         <h4>{item.name}</h4>
-                        <p className="cart-item-price">Rs{item.price}</p>
+                        <div className="cart-item-price">
+                          {item.salePrice && item.salePrice > 0 && item.salePrice < item.price ? (
+                            <>
+                              <span className="discounted-price">Rs {item.salePrice}</span>
+                              <span className="original-price">Rs {item.price}</span>
+                            </>
+                          ) : (
+                            <span>Rs {item.price}</span>
+                          )}
+                        </div>
                         <div className="quantity-controls">
                           <button onClick={() => updateCartItemQuantity(item.id, -1)}>-</button>
                           <span>{item.quantity}</span>
