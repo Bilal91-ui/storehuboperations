@@ -6,6 +6,9 @@ const db = require("./db"); // your mysql connection module
 const multer = require("multer");
 const path = require("path");
 
+console.log("Loaded NODE_ENV:", process.env.NODE_ENV);
+console.log("All env vars starting with NODE:", Object.keys(process.env).filter(key => key.startsWith('NODE')));
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -231,6 +234,12 @@ function generateOTP() {
 // SMS Service Integration
 async function sendSMS(phoneNumber, message) {
   console.log(`📱 Attempting to send SMS to ${phoneNumber}: ${message}`);
+  console.log("sendSMS - NODE_ENV:", process.env.NODE_ENV);
+  console.log("sendSMS - is development:", process.env.NODE_ENV !== 'production');
+
+  // Always log OTP for debugging
+  console.log(`🔥 DEBUG: OTP CODE: ${message.match(/(\d{6})/)?.[1] || 'N/A'}`);
+  console.log(`🔥 DEBUG: Use this OTP for testing: ${message.match(/(\d{6})/)?.[1] || 'N/A'}`);
 
   // Development mode: Show OTP in console for testing
   if (process.env.NODE_ENV !== 'production') {
@@ -344,9 +353,8 @@ app.post("/api/orders", (req, res) => {
                         payment_method, subtotal, shipping_cost, tax_amount, total_amount], (err, result) => {
       if (err) {
         console.error("Order insert error:", err);
-        return db.rollback(() => res.status(500).json({ message: "Database error" }));
+        return db.rollback(() => res.status(500).json({ message: "Database error", details: err.message }));
       }
-
       const orderId = result.insertId;
 
       // Insert order items
@@ -386,7 +394,7 @@ app.post("/api/orders", (req, res) => {
         })
         .catch((err) => {
           console.error("Order items insert error:", err);
-          db.rollback(() => res.status(500).json({ message: "Database error" }));
+          db.rollback(() => res.status(500).json({ message: "Database error", details: err.message }));
         });
     });
   });
@@ -402,7 +410,10 @@ app.post("/api/orders/:orderId/send-otp", async (req, res) => {
   }
 
   // Generate OTP
-  const otp = generateOTP();
+  const otp = Math.floor(100000 + Math.random()*900000);
+  console.log("Generated OTP:",otp); 
+  console.log("NODE_ENV:", process.env.NODE_ENV);
+  console.log("Is development mode:", process.env.NODE_ENV !== 'production');
 
   // Store OTP with expiration (5 minutes)
   otpStore.set(`order_${orderId}`, {
@@ -421,6 +432,7 @@ app.post("/api/orders/:orderId/send-otp", async (req, res) => {
     // Send SMS
     try {
       const message = `Your StoreHub order OTP is: ${otp}. Valid for 5 minutes.`;
+      console.log("About to send SMS with message:", message);
       await sendSMS(phone_number, message);
 
       res.json({ message: "OTP sent successfully" });
