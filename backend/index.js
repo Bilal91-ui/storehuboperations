@@ -219,8 +219,244 @@ app.delete("/api/cart/:id", (req, res) => {
   });
 });
 
-// ---------------- ORDERS (unchanged) ----------------
-// (You can keep your existing orders code here — omitted for brevity if unchanged)
+// ---------------- OTP & SMS SERVICE ----------------
+// Simple OTP storage (in production, use Redis or database)
+const otpStore = new Map();
+
+// Generate 6-digit OTP
+function generateOTP() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+// Simulate SMS sending (replace with real SMS service like Twilio, Jazz, etc.)
+async function sendSMS(phoneNumber, message) {
+  console.log(`📱 SMS to ${phoneNumber}: ${message}`);
+  // In production, integrate with real SMS service:
+  // - Twilio: https://www.twilio.com/docs/sms
+  // - Jazz SMS API: https://developers.jazz.com/
+  // - Telenor SMS API
+  // - Or use services like MSG91, TextLocal, etc.
+
+  // For now, just log it
+  return true;
+}
+
+// ---------------- ORDERS ----------------
+
+// Create Order
+app.post("/api/orders", (req, res) => {
+  const {
+    customer_name,
+    customer_email,
+    customer_phone,
+    shipping_address,
+    payment_method,
+    cart_items,
+    subtotal,
+    shipping_cost = 10.0,
+    tax_amount
+  } = req.body;
+
+  if (!customer_name || !customer_email || !customer_phone || !shipping_address || !payment_method || !cart_items || cart_items.length === 0) {
+    return res.status(400).json({ message: "Missing required fields" });
+  }
+
+  const total_amount = subtotal + shipping_cost + tax_amount;
+  const order_number = `ORD${Date.now()}`;
+
+  // Start transaction
+  db.beginTransaction((err) => {
+    if (err) {
+      console.error("Transaction start error:", err);
+      return res.status(500).json({ message: "Database error" });
+    }
+
+    // Insert order
+    const orderSql = `
+      INSERT INTO orders (order_number, customer_name, customer_email, customer_phone, shipping_address,
+                         payment_method, subtotal, shipping_cost, tax_amount, total_amount)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `;
+
+    db.query(orderSql, [order_number, customer_name, customer_email, customer_phone, shipping_address,
+                        payment_method, subtotal, shipping_cost, tax_amount, total_amount], (err, result) => {
+      if (err) {
+        console.error("Order insert error:", err);
+        return db.rollback(() => res.status(500).json({ message: "Database error" }));
+      }
+
+      const orderId = result.insertId;
+
+      // Insert order items
+      const itemPromises = cart_items.map(item => {
+        return new Promise((resolve, reject) => {
+          const itemSql = `
+            INSERT INTO order_items (order_id, product_id, product_name, product_price, quantity, total_price)
+            VALUES (?, ?, ?, ?, ?, ?)
+          `;
+          db.query(itemSql, [orderId, item.product_id, item.name, item.price, item.quantity, item.price * item.quantity], (err) => {
+            if (err) reject(err);
+            else resolve();
+          });
+        });
+      });
+
+      Promise.all(itemPromises)
+        .then(() => {
+          // Clear cart after successful order
+          db.query("DELETE FROM cart", (err) => {
+            if (err) console.error("Cart clear error:", err);
+
+            db.commit((err) => {
+              if (err) {
+                console.error("Transaction commit error:", err);
+                return db.rollback(() => res.status(500).json({ message: "Database error" }));
+              }
+
+              res.json({
+                message: "Order created successfully",
+                order_id: orderId,
+                order_number: order_number,
+                total_amount: total_amount
+              });
+            });
+          });
+        })
+        .catch((err) => {
+          console.error("Order items insert error:", err);
+          db.rollback(() => res.status(500).json({ message: "Database error" }));
+        });
+    });
+  });
+});
+
+// Send OTP for payment verification
+app.post("/api/orders/:orderId/send-otp", async (req, res) => {
+  const { orderId } = req.params;
+  const { phone_number } = req.body;
+
+  if (!phone_number) {
+    return res.status(400).json({ message: "Phone number required" });
+  }
+
+  // Generate OTP
+  const otp = generateOTP();
+
+  // Store OTP with expiration (5 minutes)
+  otpStore.set(`order_${orderId}`, {
+    otp: otp,
+    phone: phone_number,
+    expires: Date.now() + 5 * 60 * 1000 // 5 minutes
+  });
+
+  // Update order with OTP
+  db.query("UPDATE orders SET otp_code = ?, otp_sent_at = NOW() WHERE id = ?", [otp, orderId], async (err) => {
+    if (err) {
+      console.error("OTP update error:", err);
+      return res.status(500).json({ message: "Database error" });
+    }
+
+    // Send SMS
+    try {
+      const message = `Your StoreHub order OTP is: ${otp}. Valid for 5 minutes.`;
+      await sendSMS(phone_number, message);
+
+      res.json({ message: "OTP sent successfully" });
+    } catch (smsError) {
+      console.error("SMS send error:", smsError);
+      res.status(500).json({ message: "Failed to send OTP" });
+    }
+  });
+});
+
+// Verify OTP and complete payment
+app.post("/api/orders/:orderId/verify-otp", (req, res) => {
+  const { orderId } = req.params;
+  const { otp } = req.body;
+
+  if (!otp) {
+    return res.status(400).json({ message: "OTP required" });
+  }
+
+  const otpData = otpStore.get(`order_${orderId}`);
+  if (!otpData) {
+    return res.status(400).json({ message: "OTP not found or expired" });
+  }
+
+  if (Date.now() > otpData.expires) {
+    otpStore.delete(`order_${orderId}`);
+    return res.status(400).json({ message: "OTP expired" });
+  }
+
+  if (otp !== otpData.otp) {
+    return res.status(400).json({ message: "Invalid OTP" });
+  }
+
+  // Update order as paid and verified
+  db.query(
+    "UPDATE orders SET payment_status = 'paid', otp_verified = TRUE, order_status = 'confirmed' WHERE id = ?",
+    [orderId],
+    (err) => {
+      if (err) {
+        console.error("Order update error:", err);
+        return res.status(500).json({ message: "Database error" });
+      }
+
+      // Clear OTP
+      otpStore.delete(`order_${orderId}`);
+
+      res.json({ message: "Payment verified successfully" });
+    }
+  );
+});
+
+// Get order details
+app.get("/api/orders/:orderId", (req, res) => {
+  const { orderId } = req.params;
+
+  const orderSql = "SELECT * FROM orders WHERE id = ? OR order_number = ?";
+  db.query(orderSql, [orderId, orderId], (err, orderRows) => {
+    if (err) {
+      console.error("Order fetch error:", err);
+      return res.status(500).json({ message: "Database error" });
+    }
+
+    if (orderRows.length === 0) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    const order = orderRows[0];
+
+    // Get order items
+    const itemsSql = "SELECT * FROM order_items WHERE order_id = ?";
+    db.query(itemsSql, [order.id], (err, itemRows) => {
+      if (err) {
+        console.error("Order items fetch error:", err);
+        return res.status(500).json({ message: "Database error" });
+      }
+
+      res.json({
+        order: order,
+        items: itemRows
+      });
+    });
+  });
+});
+
+// Get orders by phone number (for tracking)
+app.get("/api/orders/track/:phone", (req, res) => {
+  const { phone } = req.params;
+
+  const sql = "SELECT id, order_number, order_status, total_amount, created_at FROM orders WHERE customer_phone = ? ORDER BY created_at DESC";
+  db.query(sql, [phone], (err, rows) => {
+    if (err) {
+      console.error("Orders fetch error:", err);
+      return res.status(500).json({ message: "Database error" });
+    }
+
+    res.json(rows);
+  });
+});
 
 app.get("/", (req, res) => res.json({ status: "ok" }));
 
