@@ -60,7 +60,15 @@ export default function Checkout({ cartItems, onBack, onTrackOrder }) {
     onBack() // Close the checkout modal
   }
 
-  const subtotal = cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0)
+  const getEffectivePrice = (item) => {
+    // Use salePrice if it's set and less than the original price
+    if (item.salePrice && item.salePrice > 0 && item.salePrice < item.price) {
+      return item.salePrice
+    }
+    return item.price
+  }
+
+  const subtotal = cartItems.reduce((sum, item) => sum + getEffectivePrice(item) * item.quantity, 0)
   const shipping = 10.0
   const tax = subtotal * 0.08
   const total = subtotal + shipping + tax
@@ -246,7 +254,7 @@ export default function Checkout({ cartItems, onBack, onTrackOrder }) {
                   <h4>{item.name}</h4>
                   <p className="order-item-quantity">Qty: {item.quantity}</p>
                 </div>
-                <p className="order-item-price">Rs{(item.price * item.quantity).toFixed(2)}</p>
+                <p className="order-item-price">Rs{(getEffectivePrice(item) * item.quantity).toFixed(2)}</p>
               </div>
             ))}
           </div>

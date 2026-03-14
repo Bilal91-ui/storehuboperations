@@ -15,6 +15,19 @@ function Payment({ onClose, onPaymentSuccess, orderTotal, cartItems, shippingInf
   const [showOrderConfirmation, setShowOrderConfirmation] = useState(false)
   const [orderData, setOrderData] = useState(null)
 
+  const getEffectivePrice = (item) => {
+    // Use salePrice if it's set and less than the original price
+    if (item.salePrice && item.salePrice > 0 && item.salePrice < item.price) {
+      return item.salePrice
+    }
+    return item.price
+  }
+
+  const subtotal = cartItems.reduce((sum, item) => sum + getEffectivePrice(item) * item.quantity, 0)
+  const shipping = 10.0
+  const tax = subtotal * 0.08
+  const calculatedOrderTotal = subtotal + shipping + tax
+
   const paymentMethods = [
     {
       id: "cod",
@@ -38,7 +51,7 @@ function Payment({ onClose, onPaymentSuccess, orderTotal, cartItems, shippingInf
     setOtp("")
   }
 
-  const handleSendOTP = () => {
+  const handleSendOTP = async () => {
     if (!easypaisaNumber.trim()) {
       setErrors({ easypaisaNumber: "Please enter your Easypaisa phone number" })
       return
@@ -52,15 +65,64 @@ function Payment({ onClose, onPaymentSuccess, orderTotal, cartItems, shippingInf
     setLoading(true)
     setErrors({})
 
-    // Simulate OTP sending
-    setTimeout(() => {
+    try {
+      // First create the order
+      const orderResponse = await fetch("http://localhost:5000/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customer_name: shippingInfo.fullName,
+          customer_email: shippingInfo.email,
+          customer_phone: shippingInfo.phone,
+          shipping_address: `${shippingInfo.houseNumber} ${shippingInfo.street}, ${shippingInfo.village}, ${shippingInfo.city}, ${shippingInfo.state} ${shippingInfo.zipCode}, ${shippingInfo.country}`,
+          payment_method: "easypaisa",
+          cart_items: cartItems.map(item => ({
+            product_id: item.product_id || item.id,
+            name: item.name,
+            price: getEffectivePrice(item),
+            quantity: item.quantity
+          })),
+          subtotal: subtotal,
+          tax_amount: tax
+        })
+      })
+
+      if (!orderResponse.ok) {
+        throw new Error("Failed to create order")
+      }
+
+      const orderData = await orderResponse.json()
+      const orderId = orderData.order_id
+
+      // Now send OTP
+      const otpResponse = await fetch(`http://localhost:5000/api/orders/${orderId}/send-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phone_number: easypaisaNumber
+        })
+      })
+
+      if (!otpResponse.ok) {
+        const errorData = await otpResponse.json().catch(() => ({}));
+        throw new Error(errorData.message || "Failed to send OTP")
+      }
+
       setOtpSent(true)
       setLoading(false)
-      alert(`OTP sent to ${easypaisaNumber}`)
-    }, 2000)
+      alert(`OTP sent to ${easypaisaNumber}\n\n⚠️ DEVELOPMENT MODE: Check console/server logs for OTP code`)
+
+      // Store order ID for later use
+      setOrderData(prev => ({ ...prev, orderId }))
+
+    } catch (error) {
+      console.error("Send OTP error:", error)
+      setLoading(false)
+      setErrors({ easypaisaNumber: error.message || "Failed to send OTP. Please try again." })
+    }
   }
 
-  const handleVerifyOTP = () => {
+  const handleVerifyOTP = async () => {
     if (!otp.trim()) {
       setErrors({ otp: "Please enter the OTP" })
       return
@@ -74,59 +136,115 @@ function Payment({ onClose, onPaymentSuccess, orderTotal, cartItems, shippingInf
     setLoading(true)
     setErrors({})
 
-    // Simulate OTP verification
-    setTimeout(() => {
-      // For demo purposes, accept any 6-digit OTP
+    try {
+      const response = await fetch(`http://localhost:5000/api/orders/${orderData.orderId}/verify-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          otp: otp
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || "OTP verification failed")
+      }
+
       setOtpVerified(true)
       setLoading(false)
 
-      // Simulate balance check and payment
-      setTimeout(() => {
-        if (orderTotal <= 5000) { // Assume sufficient balance for orders under 5000
-          const newOrderData = {
-            orderId: Math.floor(Math.random() * 1000000),
-            shippingInfo: shippingInfo,
-            cartItems: cartItems,
-            paymentMethod: 'easypaisa',
-            paymentDetails: { phoneNumber: easypaisaNumber },
-            orderTotal: orderTotal,
-            subtotal: cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0),
-            shipping: 10.0,
-            tax: cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0) * 0.08,
-            estimatedDelivery: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000), // 3 days from now
-            orderDate: new Date()
-          }
-          setOrderData(newOrderData)
-          setShowOrderConfirmation(true)
-        } else {
-          alert("Insufficient balance. Please try a different payment method.")
-          setOtpVerified(false)
-          setOtpSent(false)
+      // Get updated order data
+      const orderResponse = await fetch(`http://localhost:5000/api/orders/${orderData.orderId}`)
+      if (orderResponse.ok) {
+        const orderDetails = await orderResponse.json()
+        const completeOrderData = {
+          orderId: orderDetails.order.id,
+          orderNumber: orderDetails.order.order_number,
+          shippingInfo: shippingInfo,
+          cartItems: cartItems,
+          paymentMethod: 'easypaisa',
+          paymentDetails: { phoneNumber: easypaisaNumber },
+          orderTotal: calculatedOrderTotal,
+          subtotal: subtotal,
+          shipping: shipping,
+          tax: tax,
+          estimatedDelivery: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+          orderDate: new Date(),
+          orderStatus: orderDetails.order.order_status
         }
-      }, 1000)
-    }, 2000)
+        setOrderData(completeOrderData)
+        setShowOrderConfirmation(true)
+      }
+
+    } catch (error) {
+      console.error("Verify OTP error:", error)
+      setLoading(false)
+      setErrors({ otp: error.message || "OTP verification failed" })
+    }
   }
 
-  const handleCashOnDelivery = () => {
+  const handleCashOnDelivery = async () => {
     setLoading(true)
-    // Simulate order placement
-    setTimeout(() => {
-      const newOrderData = {
-        orderId: Math.floor(Math.random() * 1000000),
+
+    try {
+      const orderResponse = await fetch("http://localhost:5000/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customer_name: shippingInfo.fullName,
+          customer_email: shippingInfo.email,
+          customer_phone: shippingInfo.phone,
+          shipping_address: `${shippingInfo.houseNumber} ${shippingInfo.street}, ${shippingInfo.village}, ${shippingInfo.city}, ${shippingInfo.state} ${shippingInfo.zipCode}, ${shippingInfo.country}`,
+          payment_method: "cod",
+          cart_items: cartItems.map(item => ({
+            product_id: item.product_id || item.id,
+            name: item.name,
+            price: getEffectivePrice(item),
+            quantity: item.quantity
+          })),
+          subtotal: subtotal,
+          tax_amount: tax
+        })
+      })
+
+      if (!orderResponse.ok) {
+        throw new Error("Failed to create order")
+      }
+
+      const orderDataResponse = await orderResponse.json()
+
+      // Get complete order details
+      const orderDetailsResponse = await fetch(`http://localhost:5000/api/orders/${orderDataResponse.order_id}`)
+      if (!orderDetailsResponse.ok) {
+        throw new Error("Failed to get order details")
+      }
+
+      const orderDetails = await orderDetailsResponse.json()
+
+      const completeOrderData = {
+        orderId: orderDetails.order.id,
+        orderNumber: orderDetails.order.order_number,
         shippingInfo: shippingInfo,
         cartItems: cartItems,
         paymentMethod: 'cod',
-        orderTotal: orderTotal,
-        subtotal: cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0),
-        shipping: 10.0,
-        tax: cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0) * 0.08,
-        estimatedDelivery: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000), // 3 days from now
-        orderDate: new Date()
+        orderTotal: calculatedOrderTotal,
+        subtotal: subtotal,
+        shipping: shipping,
+        tax: tax,
+        estimatedDelivery: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+        orderDate: new Date(),
+        orderStatus: orderDetails.order.order_status
       }
-      setOrderData(newOrderData)
+
+      setOrderData(completeOrderData)
       setShowOrderConfirmation(true)
       setLoading(false)
-    }, 2000)
+
+    } catch (error) {
+      console.error("COD order error:", error)
+      setLoading(false)
+      alert("Failed to place order. Please try again.")
+    }
   }
 
   const handleOrderConfirmationClose = () => {
@@ -155,12 +273,12 @@ function Payment({ onClose, onPaymentSuccess, orderTotal, cartItems, shippingInf
               {cartItems.map((item) => (
                 <div key={item.id} className="order-item">
                   <span>{item.name} (x{item.quantity})</span>
-                  <span>Rs {(item.price * item.quantity).toLocaleString()}</span>
+                  <span>Rs {(getEffectivePrice(item) * item.quantity).toLocaleString()}</span>
                 </div>
               ))}
             </div>
             <div className="order-total">
-              <strong>Total: Rs {orderTotal.toLocaleString()}</strong>
+              <strong>Total: Rs {calculatedOrderTotal.toLocaleString()}</strong>
             </div>
           </div>
 
@@ -255,7 +373,7 @@ function Payment({ onClose, onPaymentSuccess, orderTotal, cartItems, shippingInf
             <div className="payment-info">
               <div className="info-icon">🚚</div>
               <h3>Cash on Delivery</h3>
-              <p>You will pay Rs {orderTotal.toLocaleString()} when your order is delivered to your doorstep.</p>
+              <p>You will pay Rs {calculatedOrderTotal.toLocaleString()} when your order is delivered to your doorstep.</p>
               <ul>
                 <li>Pay only when you receive your items</li>
                 <li>No advance payment required</li>
