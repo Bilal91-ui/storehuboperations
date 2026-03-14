@@ -104,12 +104,13 @@ function Payment({ onClose, onPaymentSuccess, orderTotal, cartItems, shippingInf
       })
 
       if (!otpResponse.ok) {
-        throw new Error("Failed to send OTP")
+        const errorData = await otpResponse.json().catch(() => ({}));
+        throw new Error(errorData.message || "Failed to send OTP")
       }
 
       setOtpSent(true)
       setLoading(false)
-      alert(`OTP sent to ${easypaisaNumber}`)
+      alert(`OTP sent to ${easypaisaNumber}\n\n⚠️ DEVELOPMENT MODE: Check console/server logs for OTP code`)
 
       // Store order ID for later use
       setOrderData(prev => ({ ...prev, orderId }))
@@ -117,7 +118,7 @@ function Payment({ onClose, onPaymentSuccess, orderTotal, cartItems, shippingInf
     } catch (error) {
       console.error("Send OTP error:", error)
       setLoading(false)
-      setErrors({ easypaisaNumber: "Failed to send OTP. Please try again." })
+      setErrors({ easypaisaNumber: error.message || "Failed to send OTP. Please try again." })
     }
   }
 

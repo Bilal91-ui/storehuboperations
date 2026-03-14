@@ -228,17 +228,79 @@ function generateOTP() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-// Simulate SMS sending (replace with real SMS service like Twilio, Jazz, etc.)
+// SMS Service Integration
 async function sendSMS(phoneNumber, message) {
-  console.log(`📱 SMS to ${phoneNumber}: ${message}`);
-  // In production, integrate with real SMS service:
-  // - Twilio: https://www.twilio.com/docs/sms
-  // - Jazz SMS API: https://developers.jazz.com/
-  // - Telenor SMS API
-  // - Or use services like MSG91, TextLocal, etc.
+  console.log(`📱 Attempting to send SMS to ${phoneNumber}: ${message}`);
 
-  // For now, just log it
-  return true;
+  // Development mode: Show OTP in console for testing
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(`🔥 DEVELOPMENT MODE: OTP would be sent to ${phoneNumber}`);
+    console.log(`🔥 OTP CODE: ${message.match(/(\d{6})/)?.[1] || 'N/A'}`);
+    console.log(`🔥 Use this OTP for testing: ${message.match(/(\d{6})/)?.[1] || 'N/A'}`);
+    return true;
+  }
+
+  // Production SMS integration
+  try {
+    // Option 1: Twilio (works internationally)
+    if (process.env.TWILIO_SID && process.env.TWILIO_TOKEN) {
+      const twilio = require('twilio');
+      const client = twilio(process.env.TWILIO_SID, process.env.TWILIO_TOKEN);
+      await client.messages.create({
+        body: message,
+        from: process.env.TWILIO_PHONE,
+        to: phoneNumber.startsWith('+') ? phoneNumber : `+92${phoneNumber.slice(1)}`
+      });
+      console.log(`✅ SMS sent via Twilio to ${phoneNumber}`);
+      return true;
+    }
+
+    // Option 2: Jazz SMS API (Pakistan)
+    if (process.env.JAZZ_API_KEY && process.env.JAZZ_API_SECRET) {
+      const axios = require('axios');
+      const response = await axios.post('https://api.jazz.com/sms/send', {
+        to: phoneNumber.startsWith('+') ? phoneNumber : `+92${phoneNumber.slice(1)}`,
+        message: message
+      }, {
+        headers: {
+          'Authorization': `Bearer ${process.env.JAZZ_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      console.log(`✅ SMS sent via Jazz API to ${phoneNumber}`);
+      return true;
+    }
+
+    // Option 3: MSG91 (works in Pakistan)
+    if (process.env.MSG91_AUTH_KEY) {
+      const axios = require('axios');
+      const response = await axios.post(`https://api.msg91.com/api/v2/sendsms`, {
+        sender: process.env.MSG91_SENDER_ID || 'STOREHB',
+        route: '4', // Transactional route
+        country: '92',
+        sms: [{
+          message: message,
+          to: [phoneNumber.startsWith('+') ? phoneNumber.slice(3) : phoneNumber.slice(1)]
+        }]
+      }, {
+        headers: {
+          'authkey': process.env.MSG91_AUTH_KEY,
+          'Content-Type': 'application/json'
+        }
+      });
+      console.log(`✅ SMS sent via MSG91 to ${phoneNumber}`);
+      return true;
+    }
+
+    // Fallback: Log the message (for development)
+    console.log(`⚠️  No SMS service configured. OTP would be: ${message.match(/(\d{6})/)?.[1] || 'N/A'}`);
+    console.log(`⚠️  Add environment variables for real SMS service`);
+    return true;
+
+  } catch (error) {
+    console.error('❌ SMS sending failed:', error.message);
+    throw new Error('Failed to send SMS');
+  }
 }
 
 // ---------------- ORDERS ----------------
