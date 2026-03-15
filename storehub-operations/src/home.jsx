@@ -21,6 +21,13 @@ function Home() {
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [userRole, setUserRole] = useState("")
 
+  // Form States
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [fullName, setFullName] = useState("")
+  const [otp, setOtp] = useState("")
+  const [otpSent, setOtpSent] = useState(false)
+
   // --- HANDLERS ---
   const handleSignUpClick = () => {
     setShowRoleSelection(true)
@@ -60,6 +67,11 @@ function Home() {
     setShowRoleSelection(false)
   }
 
+  const sendOtp = () => {
+    // Simulate sending OTP
+    setOtpSent(true)
+  }
+
   // --- 1. RENDER LOGGED IN VIEWS ---
 
   // A. Seller Dashboard
@@ -97,17 +109,34 @@ function Home() {
         {/* --- LOGIN VIEW (Same for all) --- */}
         {isLogin ? (
           <>
-            <input className="form-input" type="email" placeholder={`${selectedRole} Email`} required />
-            <input className="form-input" type="password" placeholder="Password" required />
+            <input className="form-input" type="email" placeholder={`${selectedRole} Email`} value={email} onChange={(e) => setEmail(e.target.value)} required />
+            <input className="form-input" type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required />
           </>
         ) : (
           /* --- REGISTRATION VIEW (Role Specific) --- */
           <>
             {/* Common Name/Email/Pass */}
-            <input className="form-input" type="text" placeholder="Full Name" required />
-            <input className="form-input" type="email" placeholder="Email Address" required />
-            <input className="form-input" type="password" placeholder="Password" required />
-
+            <input className="form-input" type="text" placeholder="Full Name" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
+            <input className="form-input" type="email" placeholder="Email Address" value={email} onChange={(e) => setEmail(e.target.value)} required />
+            {/* OTP for Rider */}
+            {selectedRole === 'rider' && (
+              <>
+                <button onClick={sendOtp}>Send OTP</button>
+                {otpSent && (
+                  <input type="text" placeholder="Enter OTP" value={otp} onChange={(e) => setOtp(e.target.value)} />
+                )}
+              </>
+            )}
+            <input className="form-input" type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+            {/* OTP for other roles */}
+            {selectedRole !== 'rider' && (
+              <>
+                <button onClick={sendOtp}>Send OTP</button>
+                {otpSent && (
+                  <input type="text" placeholder="Enter OTP" value={otp} onChange={(e) => setOtp(e.target.value)} />
+                )}
+              </>
+            )}
             {/* RIDER SPECIFIC FIELDS */}
             {selectedRole === 'rider' && (
               <>

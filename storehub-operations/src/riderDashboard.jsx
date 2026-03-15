@@ -10,16 +10,7 @@ const RiderDashboard = ({ onLogout }) => {
   const [selectedTxn, setSelectedTxn] = useState(null);   // Transaction Modal
 
   // --- DATA: NEW TASKS ---
-  const [tasks, setTasks] = useState([
-    { 
-      id: 101, restaurant: 'Burger King', pickupAddr: '123 Food St', customer: 'John Doe', dropoffAddr: '456 Home Ave', 
-      items: [{ name: 'Whopper Meal', qty: 2 }, { name: 'Coke Large', qty: 2 }], distance: '3.2 km', estTime: '15 mins', earnings: '$5.50', otp: '1234'
-    },
-    { 
-      id: 102, restaurant: 'Pizza Hut', pickupAddr: '88 Cheese Blvd', customer: 'Alice Smith', dropoffAddr: '99 Party Ln',
-      items: [{ name: 'Pepperoni Pizza', qty: 1 }], distance: '1.5 km', estTime: '10 mins', earnings: '$3.00', otp: '1234'
-    }
-  ]);
+  const [tasks, setTasks] = useState([]);
 
   // --- DATA: EARNINGS HISTORY (Req 5 & 6) ---
   const [earningsFilter, setEarningsFilter] = useState('weekly');
