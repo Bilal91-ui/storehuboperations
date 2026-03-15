@@ -10,6 +10,7 @@ function Signup({ onClose, onSwitchToLogin, onSignupSuccess }) {
     phone: "",
     password: "",
     confirmPassword: "",
+    emailOtp: "",
   })
   const [error, setError] = useState("")
 
@@ -25,7 +26,7 @@ function Signup({ onClose, onSwitchToLogin, onSignupSuccess }) {
     e.preventDefault()
 
     // Validation
-    if (!formData.fullName || !formData.email || !formData.phone || !formData.password || !formData.confirmPassword) {
+    if (!formData.fullName || !formData.email || !formData.phone || !formData.password || !formData.confirmPassword || !formData.emailOtp) {
       setError("Please fill in all fields")
       return
     }
@@ -45,6 +46,7 @@ function Signup({ onClose, onSwitchToLogin, onSignupSuccess }) {
       name: formData.fullName,
       email: formData.email,
       phone: formData.phone,
+      emailOtp: formData.emailOtp,
     }
 
     onSignupSuccess(userData)
@@ -87,6 +89,19 @@ function Signup({ onClose, onSwitchToLogin, onSignupSuccess }) {
               value={formData.email}
               onChange={handleChange}
               placeholder="Enter your email"
+              className="form-input"
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="emailOtp">Email OTP</label>
+            <input
+              type="text"
+              id="emailOtp"
+              name="emailOtp"
+              value={formData.emailOtp}
+              onChange={handleChange}
+              placeholder="Enter OTP sent to your email"
               className="form-input"
             />
           </div>

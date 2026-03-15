@@ -5,6 +5,8 @@ require("dotenv").config();
 const db = require("./db"); // your mysql connection module
 const multer = require("multer");
 const path = require("path");
+const bcrypt = require("bcrypt");
+const nodemailer = require("nodemailer");
 
 console.log("Loaded NODE_ENV:", process.env.NODE_ENV);
 console.log("All env vars starting with NODE:", Object.keys(process.env).filter(key => key.startsWith('NODE')));
@@ -12,6 +14,14 @@ console.log("All env vars starting with NODE:", Object.keys(process.env).filter(
 const app = express();
 app.use(cors());
 app.use(express.json());
+// EMAIL SERVICE
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
+  }
+});
 
 // serve uploads
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
@@ -26,6 +36,87 @@ const storage = multer.diskStorage({
   }
 });
 const upload = multer({ storage });
+// ================= VERIFY EMAIL =================
+
+app.post("/api/auth/verify-email", (req, res) => {
+
+  const { user_id, otp } = req.body;
+
+  db.query(
+    "SELECT * FROM email_verification WHERE user_id = ?",
+    [user_id],
+    (err, rows) => {
+
+      if (err) return res.status(500).json({ message: "DB error" });
+
+      if (rows.length === 0)
+        return res.status(400).json({ message: "OTP not found" });
+
+      const record = rows[0];
+
+      if (record.otp_code != otp)
+        return res.status(400).json({ message: "Invalid OTP" });
+
+      db.query(
+        "UPDATE email_verification SET is_verified = TRUE, verified_at = NOW() WHERE user_id = ?",
+        [user_id]
+      );
+
+      // Mark email as verified, but do not approve the user yet (admin should approve)
+      db.query(
+        "UPDATE email_verification SET is_verified = TRUE, verified_at = NOW() WHERE user_id = ?",
+        [user_id]
+      );
+
+      // Log event for admin review
+      db.query(
+        "INSERT INTO registration_events (user_id, event_type) VALUES (?, 'email_verified')",
+        [user_id]
+      );
+
+      res.json({ message: "Email verified successfully. Awaiting admin approval." });
+
+    }
+  );
+
+});
+
+// ================= LOGIN =================
+
+app.post("/api/auth/login", async (req, res) => {
+
+  const { email, password } = req.body;
+
+  db.query(
+    "SELECT * FROM users WHERE email = ?",
+    [email],
+    async (err, rows) => {
+
+      if (err) return res.status(500).json({ message: "DB error" });
+
+      if (rows.length === 0)
+        return res.status(400).json({ message: "User not found" });
+
+      const user = rows[0];
+
+      const match = await bcrypt.compare(password, user.password_hash);
+
+      if (!match)
+        return res.status(400).json({ message: "Invalid password" });
+
+      if (user.registration_status !== "approved")
+        return res.status(403).json({ message: "Account not approved yet" });
+
+      res.json({
+        message: "Login success",
+        user_id: user.id,
+        role_id: user.role_id
+      });
+
+    }
+  );
+
+});
 
 // ---------------- PRODUCTS ----------------
 
@@ -34,11 +125,15 @@ app.post("/api/products", upload.single("image"), (req, res) => {
   const { name, price, stock, category, description } = req.body;
   const imagePath = req.file ? `/uploads/${req.file.filename}` : null;
 
+  if (!name || !price || price <= 0 || !stock || stock < 0) {
+    return res.status(400).json({ message: "Invalid product data: name, positive price, and non-negative stock required" });
+  }
+
   const sql = `
-    INSERT INTO products (name, price, stock, category, description, image)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO products (name, price, stock, category, description, image, basePrice)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `;
-  db.query(sql, [name, price, stock, category || null, description || null, imagePath], (err, result) => {
+  db.query(sql, [name, price, stock, category || null, description || null, imagePath, price], (err, result) => {
     if (err) {
       console.error("Insert product error:", err);
       return res.status(500).json({ message: "Database error" });
@@ -97,10 +192,11 @@ app.put("/api/products/:id/pricing", (req, res) => {
   const { id } = req.params;
   const { basePrice, discountPercent, startDate, endDate } = req.body;
 
-  if (basePrice == null) return res.status(400).json({ message: "Base price required" });
+  if (basePrice == null || basePrice < 0) return res.status(400).json({ message: "Base price must be a positive number" });
 
-  const discount = discountPercent || 0;
-  const salePrice = basePrice - (basePrice * (discount / 100));
+  const discount = Math.max(0, Math.min(100, discountPercent || 0)); // Limit discount to 0-100%
+  const salePrice = Math.max(0, basePrice - (basePrice * (discount / 100))); // Ensure sale price is not negative
+
   const sql = `
     UPDATE products
     SET basePrice = ?, discountPercent = ?, salePrice = ?, promoStart = ?, promoEnd = ?
@@ -311,6 +407,132 @@ async function sendSMS(phoneNumber, message) {
     throw new Error('Failed to send SMS');
   }
 }
+// ================= USER REGISTER =================
+
+app.post("/api/auth/register", async (req, res) => {
+
+  const {
+    email,
+    password,
+    full_name,
+    role,
+    phone_number,
+    vehicle_type,
+    license_number,
+    business_name,
+    store_address
+  } = req.body;
+
+  if (!email || !password || !full_name || !role) {
+    return res.status(400).json({ message: "Missing required fields" });
+  }
+
+  try {
+
+    const hash = await bcrypt.hash(password, 10);
+
+    // get role id
+    db.query("SELECT id FROM roles WHERE role_name = ?", [role], async (err, roleRows) => {
+
+      if (err) return res.status(500).json({ message: "DB error" });
+      if (roleRows.length === 0) return res.status(400).json({ message: "Invalid role" });
+
+      const role_id = roleRows[0].id;
+
+      db.query(
+        "INSERT INTO users (email,password_hash,full_name,role_id) VALUES (?,?,?,?)",
+        [email, hash, full_name, role_id],
+        async (err, result) => {
+
+          if (err) {
+            console.error(err);
+            return res.status(500).json({ message: "User creation failed" });
+          }
+
+          const userId = result.insertId;
+
+          // Log registration event
+          db.query(
+            "INSERT INTO registration_events (user_id, event_type) VALUES (?, 'applied')",
+            [userId]
+          );
+
+          // rider data
+          if (role === "rider") {
+
+            db.query(
+              `INSERT INTO riders (user_id, vehicle_type, license_number, phone_number)
+               VALUES (?,?,?,?)`,
+              [userId, vehicle_type, license_number, phone_number]
+            );
+
+          }
+
+          // seller data
+          if (role === "seller") {
+
+            db.query(
+              `INSERT INTO sellers (user_id,business_name,store_address,store_phone)
+               VALUES (?,?,?,?)`,
+              [userId, business_name, store_address, phone_number]
+            );
+
+          }
+
+          // generate email OTP
+          const otp = Math.floor(100000 + Math.random() * 900000);
+
+          db.query(
+            `INSERT INTO email_verification (user_id,otp_code,otp_expires_at)
+             VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 10 MINUTE))`,
+            [userId, otp]
+          );
+
+          // send email
+          try {
+            await transporter.sendMail({
+              from: process.env.EMAIL_USER,
+              to: email,
+              subject: "Email Verification OTP",
+              text: `Your OTP code is ${otp}`
+            });
+          } catch (err) {
+            console.error("Email send error:", err);
+
+            // In production, treat email failure as fatal.
+            if (process.env.NODE_ENV === 'production') {
+              return res.status(500).json({
+                message: "Failed to send OTP email. Check SMTP credentials."
+              });
+            }
+          }
+
+          console.log("[DEV] OTP for user", userId, "is", otp);
+
+          const responsePayload = {
+            message: "User registered. Verify email.",
+            user_id: userId
+          };
+
+          // In development, return OTP so UI can show it instead of relying on email delivery.
+          if (process.env.NODE_ENV !== 'production') {
+            responsePayload.otp = otp;
+          }
+
+          res.json(responsePayload);
+
+        }
+      );
+
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+
+});
+
 
 // ---------------- ORDERS ----------------
 
@@ -553,3 +775,4 @@ app.get("/", (req, res) => res.json({ status: "ok" }));
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+

@@ -129,7 +129,137 @@ async function init() {
     await ensureColumn('order_items', 'quantity', 'INT NOT NULL');
     await ensureColumn('order_items', 'total_price', 'DECIMAL(10,2) NOT NULL');
 
-    console.log('✅ Database `storehub` and tables `products`, `cart`, `orders`, and `order_items` created or already exist');
+    // Create auth-related tables
+    const createRolesTable = `
+      CREATE TABLE IF NOT EXISTS roles (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        role_name VARCHAR(50) UNIQUE NOT NULL,
+        description TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `;
+    await connection.query(createRolesTable);
+
+    await connection.query(`
+      INSERT IGNORE INTO roles (role_name, description) VALUES
+      ('rider', 'Delivery person'),
+      ('seller', 'Store owner'),
+      ('admin', 'System administrator')
+    `);
+
+    const createUsersTable = `
+      CREATE TABLE IF NOT EXISTS users (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        password_hash VARCHAR(255) NOT NULL,
+        full_name VARCHAR(100) NOT NULL,
+        registration_status ENUM('pending', 'approved', 'rejected', 'blocked') DEFAULT 'pending',
+        role_id INT NOT NULL,
+        approved_by INT,
+        approved_date TIMESTAMP NULL,
+        rejection_reason TEXT,
+        rejected_by INT,
+        rejected_date TIMESTAMP NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_email (email),
+        INDEX idx_status (registration_status),
+        INDEX idx_role (role_id),
+        FOREIGN KEY (role_id) REFERENCES roles(id)
+      );
+    `;
+    await connection.query(createUsersTable);
+
+    const createRidersTable = `
+      CREATE TABLE IF NOT EXISTS riders (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        user_id INT UNIQUE NOT NULL,
+        vehicle_type VARCHAR(50) NOT NULL,
+        license_number VARCHAR(50) UNIQUE NOT NULL,
+        license_expiry DATE,
+        documents_verified BOOLEAN DEFAULT FALSE,
+        verified_by INT,
+        verified_date TIMESTAMP NULL,
+        phone_number VARCHAR(20),
+        current_location JSON,
+        is_active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_user (user_id),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+    `;
+    await connection.query(createRidersTable);
+
+    const createSellersTable = `
+      CREATE TABLE IF NOT EXISTS sellers (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        user_id INT UNIQUE NOT NULL,
+        business_name VARCHAR(100) NOT NULL,
+        store_address VARCHAR(255) NOT NULL,
+        store_phone VARCHAR(20),
+        documents_verified BOOLEAN DEFAULT FALSE,
+        verified_by INT,
+        verified_date TIMESTAMP NULL,
+        store_image_url VARCHAR(255),
+        store_status ENUM('active', 'inactive', 'suspended') DEFAULT 'inactive',
+        rating DECIMAL(3, 2) DEFAULT 0.00,
+        total_orders INT DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_user (user_id),
+        INDEX idx_status (store_status),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+    `;
+    await connection.query(createSellersTable);
+
+    const createAdminsTable = `
+      CREATE TABLE IF NOT EXISTS admins (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        user_id INT UNIQUE NOT NULL,
+        admin_level ENUM('super_admin', 'moderator') DEFAULT 'moderator',
+        permissions JSON,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_user (user_id),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+    `;
+    await connection.query(createAdminsTable);
+
+    const createRegistrationEventsTable = `
+      CREATE TABLE IF NOT EXISTS registration_events (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        event_type ENUM('applied', 'approved', 'rejected', 'email_verified', 'document_verified') NOT NULL,
+        actor_id INT,
+        notes TEXT,
+        event_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_user (user_id),
+        INDEX idx_event_type (event_type),
+        INDEX idx_timestamp (event_timestamp),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+    `;
+    await connection.query(createRegistrationEventsTable);
+
+    const createEmailVerificationTable = `
+      CREATE TABLE IF NOT EXISTS email_verification (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT UNIQUE NOT NULL,
+        otp_code VARCHAR(6),
+        otp_expires_at TIMESTAMP,
+        is_verified BOOLEAN DEFAULT FALSE,
+        verified_at TIMESTAMP NULL,
+        attempts INT DEFAULT 0,
+        last_attempt_at TIMESTAMP NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+    `;
+    await connection.query(createEmailVerificationTable);
+
+    console.log('✅ Database `storehub` and all required tables are created or already exist');
     process.exit(0);
   } catch (err) {
     console.error('❌ Failed to initialize database:', err.message || err);

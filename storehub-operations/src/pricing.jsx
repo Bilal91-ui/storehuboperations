@@ -33,7 +33,7 @@ const Pricing = () => {
   const handleEditClick = (product) => {
     setSelectedProduct(product);
     setFormData({
-      basePrice: product.basePrice || 0,
+      basePrice: product.price || 0,  // Always use the original price as base price
       discountPercent: product.discountPercent || 0,
       promoStart: product.promoStart || '',
       promoEnd: product.promoEnd || ''
@@ -42,14 +42,25 @@ const Pricing = () => {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    let processedValue = value;
+
+    if (name === 'discountPercent') {
+      // Limit discount to 0-100% to prevent negative prices
+      processedValue = Math.max(0, Math.min(100, parseFloat(value) || 0));
+    } else if (name === 'basePrice') {
+      // Ensure base price is not negative
+      processedValue = Math.max(0, parseFloat(value) || 0);
+    }
+
+    setFormData(prev => ({ ...prev, [name]: processedValue }));
   };
 
   const calculateSalePrice = () => {
     const base = parseFloat(formData.basePrice) || 0;
     const discount = parseFloat(formData.discountPercent) || 0;
-    if (discount <= 0) return base.toFixed(2);
-    return (base - (base * (discount / 100))).toFixed(2);
+    const salePrice = base - (base * (discount / 100));
+    // Ensure sale price never goes negative
+    return Math.max(0, salePrice).toFixed(2);
   };
 
   const handleSave = async (e) => {
@@ -121,7 +132,7 @@ const Pricing = () => {
             products.map(p => (
               <tr key={p.id}>
                 <td>{p.name}</td>
-                <td>PKR {p.basePrice || p.price}</td>
+                <td>PKR {p.price}</td>
                 <td>
                   {p.discountPercent > 0
                     ? <span style={{color:'red'}}>{p.discountPercent}% OFF</span>
@@ -146,6 +157,9 @@ const Pricing = () => {
         <div className="modal-overlay">
           <div className="modal-content" style={{width: '400px'}}>
             <h3>Edit: {selectedProduct.name}</h3>
+            <div style={{ marginBottom: '20px', padding: '10px', backgroundColor: '#f9f9f9', borderRadius: '5px' }}>
+              <strong>Base Price: PKR {formData.basePrice}</strong>
+            </div>
             <form onSubmit={handleSave} className="pricing-form">
 
               <label>Base Price (PKR)</label>
@@ -155,6 +169,10 @@ const Pricing = () => {
                 value={formData.basePrice}
                 onChange={handleChange}
                 required
+                readOnly
+                style={{ backgroundColor: '#f5f5f5' }}
+                min="0"
+                step="0.01"
               />
 
               <label>Discount %</label>
@@ -163,6 +181,8 @@ const Pricing = () => {
                 name="discountPercent"
                 value={formData.discountPercent}
                 onChange={handleChange}
+                min="0"
+                max="100"
               />
 
               <div className="calculated-price">

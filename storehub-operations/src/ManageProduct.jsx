@@ -62,11 +62,22 @@ const ManageProduct = () => {
       return alert("Fill required fields");
     }
 
+    const price = parseFloat(formData.price);
+    const stock = parseInt(formData.stock, 10);
+
+    if (price <= 0) {
+      return alert("Price must be a positive number");
+    }
+
+    if (stock < 0) {
+      return alert("Stock cannot be negative");
+    }
+
     try {
       const data = new FormData();
       data.append("name", formData.name);
-      data.append("price", parseFloat(formData.price));
-      data.append("stock", parseInt(formData.stock, 10));
+      data.append("price", price);
+      data.append("stock", stock);
       data.append("category", formData.category);
       data.append("description", formData.description);
 
@@ -163,6 +174,8 @@ const ManageProduct = () => {
             value={formData.price}
             onChange={handleInputChange}
             required
+            min="0.01"
+            step="0.01"
           />
 
           <label>Stock *</label>
@@ -172,6 +185,7 @@ const ManageProduct = () => {
             value={formData.stock}
             onChange={handleInputChange}
             required
+            min="0"
           />
 
           <label>Category</label>
