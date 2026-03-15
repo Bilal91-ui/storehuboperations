@@ -435,7 +435,11 @@ app.post("/api/orders/:orderId/send-otp", async (req, res) => {
       console.log("About to send SMS with message:", message);
       await sendSMS(phone_number, message);
 
-      res.json({ message: "OTP sent successfully" });
+      const payload = { message: "OTP sent successfully" };
+      if (process.env.NODE_ENV !== 'production') {
+        payload.otp = otp;
+      }
+      res.json(payload);
     } catch (smsError) {
       console.error("SMS send error:", smsError);
       res.status(500).json({ message: "Failed to send OTP" });
