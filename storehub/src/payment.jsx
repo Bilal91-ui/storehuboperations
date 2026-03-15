@@ -103,17 +103,24 @@ function Payment({ onClose, onPaymentSuccess, orderTotal, cartItems, shippingInf
         })
       })
 
+      const otpData = await otpResponse.json().catch(() => ({}))
       if (!otpResponse.ok) {
-        const errorData = await otpResponse.json().catch(() => ({}));
-        throw new Error(errorData.message || "Failed to send OTP")
+        throw new Error(otpData.message || "Failed to send OTP")
       }
 
       setOtpSent(true)
       setLoading(false)
-      alert(`OTP sent to ${easypaisaNumber}\n\n⚠️ DEVELOPMENT MODE: Check console/server logs for OTP code`)
+
+      // In development mode we return the OTP in the response so testers can see it easily.
+      if (otpData.otp) {
+        setOtp(otpData.otp)
+        alert(`OTP sent to ${easypaisaNumber}\n\n✅ DEV MODE OTP: ${otpData.otp}`)
+      } else {
+        alert(`OTP sent to ${easypaisaNumber}\n\n⚠️ DEVELOPMENT MODE: Check console/server logs for OTP code`)
+      }
 
       // Store order ID for later use
-      setOrderData(prev => ({ ...prev, orderId }))
+      setOrderData({ orderId })
 
     } catch (error) {
       console.error("Send OTP error:", error)
@@ -152,30 +159,7 @@ function Payment({ onClose, onPaymentSuccess, orderTotal, cartItems, shippingInf
 
       setOtpVerified(true)
       setLoading(false)
-
-      // Get updated order data
-      const orderResponse = await fetch(`http://localhost:5000/api/orders/${orderData.orderId}`)
-      if (orderResponse.ok) {
-        const orderDetails = await orderResponse.json()
-        const completeOrderData = {
-          orderId: orderDetails.order.id,
-          orderNumber: orderDetails.order.order_number,
-          shippingInfo: shippingInfo,
-          cartItems: cartItems,
-          paymentMethod: 'easypaisa',
-          paymentDetails: { phoneNumber: easypaisaNumber },
-          orderTotal: calculatedOrderTotal,
-          subtotal: subtotal,
-          shipping: shipping,
-          tax: tax,
-          estimatedDelivery: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
-          orderDate: new Date(),
-          orderStatus: orderDetails.order.order_status
-        }
-        setOrderData(completeOrderData)
-        setShowOrderConfirmation(true)
-      }
-
+      // OTP verified, now user can click Pay Now to confirm order
     } catch (error) {
       console.error("Verify OTP error:", error)
       setLoading(false)
@@ -389,8 +373,49 @@ function Payment({ onClose, onPaymentSuccess, orderTotal, cartItems, shippingInf
           </button>
           <button
             className="btn-primary"
-            onClick={selectedPaymentMethod === "cod" ? handleCashOnDelivery : () => {}}
-            disabled={loading || !selectedPaymentMethod || (selectedPaymentMethod === "easypaisa" && !otpVerified)}
+            onClick={
+              selectedPaymentMethod === "cod"
+                ? handleCashOnDelivery
+                : otpVerified
+                ? async () => {
+                    setLoading(true)
+                    try {
+                      const orderResponse = await fetch(`http://localhost:5000/api/orders/${orderData.orderId}`)
+                      if (!orderResponse.ok) throw new Error("Failed to fetch order details")
+                      const orderDetails = await orderResponse.json()
+
+                      const completeOrderData = {
+                        orderId: orderDetails.order.id,
+                        orderNumber: orderDetails.order.order_number,
+                        shippingInfo: shippingInfo,
+                        cartItems: cartItems,
+                        paymentMethod: 'easypaisa',
+                        paymentDetails: { phoneNumber: easypaisaNumber },
+                        orderTotal: calculatedOrderTotal,
+                        subtotal: subtotal,
+                        shipping: shipping,
+                        tax: tax,
+                        estimatedDelivery: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+                        orderDate: new Date(),
+                        orderStatus: orderDetails.order.order_status
+                      }
+
+                      setOrderData(completeOrderData)
+                      setShowOrderConfirmation(true)
+                    } catch (error) {
+                      console.error("Easypaisa finalize error:", error)
+                      alert("Failed to complete payment. Please try again.")
+                    } finally {
+                      setLoading(false)
+                    }
+                  }
+                : () => {}
+            }
+            disabled={
+              loading ||
+              !selectedPaymentMethod ||
+              (selectedPaymentMethod === "easypaisa" && !otpVerified)
+            }
           >
             {loading ? "Processing..." : selectedPaymentMethod === "cod" ? "Place Order" : "Pay Now"}
           </button>

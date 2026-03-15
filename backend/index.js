@@ -373,10 +373,7 @@ app.post("/api/orders", (req, res) => {
 
       Promise.all(itemPromises)
         .then(() => {
-          // Clear cart after successful order
-          db.query("DELETE FROM cart", (err) => {
-            if (err) console.error("Cart clear error:", err);
-
+          const finalizeOrder = () => {
             db.commit((err) => {
               if (err) {
                 console.error("Transaction commit error:", err);
@@ -390,7 +387,18 @@ app.post("/api/orders", (req, res) => {
                 total_amount: total_amount
               });
             });
-          });
+          };
+
+          if (payment_method === "cod") {
+            // Clear cart immediately for COD orders (finalized immediately)
+            db.query("DELETE FROM cart", (err) => {
+              if (err) console.error("Cart clear error:", err);
+              finalizeOrder();
+            });
+          } else {
+            // For other payment methods (e.g., Easypaisa), keep cart until payment is verified
+            finalizeOrder();
+          }
         })
         .catch((err) => {
           console.error("Order items insert error:", err);
@@ -409,9 +417,9 @@ app.post("/api/orders/:orderId/send-otp", async (req, res) => {
     return res.status(400).json({ message: "Phone number required" });
   }
 
-  // Generate OTP
-  const otp = Math.floor(100000 + Math.random()*900000);
-  console.log("Generated OTP:",otp); 
+  // Generate OTP (as string to avoid type mismatch)
+  const otp = (Math.floor(100000 + Math.random()*900000)).toString();
+  console.log("Generated OTP:", otp);
   console.log("NODE_ENV:", process.env.NODE_ENV);
   console.log("Is development mode:", process.env.NODE_ENV !== 'production');
 
@@ -466,7 +474,7 @@ app.post("/api/orders/:orderId/verify-otp", (req, res) => {
     return res.status(400).json({ message: "OTP expired" });
   }
 
-  if (otp !== otpData.otp) {
+  if (otp.toString().trim() !== otpData.otp.toString().trim()) {
     return res.status(400).json({ message: "Invalid OTP" });
   }
 
@@ -480,10 +488,15 @@ app.post("/api/orders/:orderId/verify-otp", (req, res) => {
         return res.status(500).json({ message: "Database error" });
       }
 
-      // Clear OTP
-      otpStore.delete(`order_${orderId}`);
+      // Clear the cart after successful payment verification
+      db.query("DELETE FROM cart", (cartErr) => {
+        if (cartErr) console.error("Cart clear error:", cartErr);
 
-      res.json({ message: "Payment verified successfully" });
+        // Clear OTP
+        otpStore.delete(`order_${orderId}`);
+
+        res.json({ message: "Payment verified successfully" });
+      });
     }
   );
 });
