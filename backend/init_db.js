@@ -98,6 +98,13 @@ async function init() {
     await ensureColumn('orders', 'total', 'DECIMAL(10,2)');
     await ensureColumn('orders', 'status', "ENUM('Pending','Processing','Shipped','Completed','Cancelled') DEFAULT 'Pending'");
 
+    // Ensure legacy columns are nullable to avoid insert failures
+    await connection.query("ALTER TABLE orders MODIFY COLUMN address TEXT NULL").catch(()=>{});
+    await connection.query("ALTER TABLE orders MODIFY COLUMN total DECIMAL(10,2) NULL").catch(()=>{});
+    await connection.query("ALTER TABLE orders MODIFY COLUMN status ENUM('Pending','Processing','Shipped','Completed','Cancelled') NULL").catch(()=>{});
+    await connection.query("ALTER TABLE orders MODIFY COLUMN created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP").catch(()=>{});
+    await connection.query("ALTER TABLE orders MODIFY COLUMN updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP").catch(()=>{});
+
     // Create order_items table
     const createOrderItemsTable = `
       CREATE TABLE IF NOT EXISTS order_items (
@@ -114,6 +121,13 @@ async function init() {
     `;
 
     await connection.query(createOrderItemsTable);
+
+    // Ensure legacy order_items schema contains expected columns (for older schema versions)
+    await ensureColumn('order_items', 'product_id', 'INT NOT NULL');
+    await ensureColumn('order_items', 'product_name', 'VARCHAR(255) NOT NULL');
+    await ensureColumn('order_items', 'product_price', 'DECIMAL(10,2) NOT NULL');
+    await ensureColumn('order_items', 'quantity', 'INT NOT NULL');
+    await ensureColumn('order_items', 'total_price', 'DECIMAL(10,2) NOT NULL');
 
     console.log('✅ Database `storehub` and tables `products`, `cart`, `orders`, and `order_items` created or already exist');
     process.exit(0);
