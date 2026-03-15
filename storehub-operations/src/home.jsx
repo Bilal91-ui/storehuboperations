@@ -48,6 +48,7 @@ function Home() {
     setSelectedRole(null)
     setIsLogin(false)
     setSignupStep(1)
+    setRegistrationCompleted(false)
     setAuthData({
       email: "",
       password: "",
@@ -70,6 +71,7 @@ function Home() {
   const handleRoleSelect = (role) => {
     setSelectedRole(role)
     setSignupStep(1)
+    setRegistrationCompleted(false)
     setAuthData({
       email: "",
       password: "",
@@ -185,6 +187,7 @@ function Home() {
   const handleBackToRoles = () => {
     setSelectedRole(null)
     setSignupStep(1)
+    setRegistrationCompleted(false)
   }
 
   const handleLogout = () => {
@@ -221,14 +224,27 @@ function Home() {
 
     if (registrationCompleted) {
       return (
-        <div className="signup-form" style={{ padding: 20 }}>
-          <h2>Registration Submitted</h2>
-          <p>
-            Your email has been verified. Your registration is now pending admin approval.
+        <div className="signup-form">
+          <button
+            type="button"
+            className="close-btn"
+            onClick={handleBackToRoles}
+          >
+            ✕
+          </button>
+
+          <h2 className="form-title">Registration Submitted</h2>
+          <p style={{ marginTop: '1rem', textAlign: 'center' }}>
+            Thank you! Your registration has been submitted and is pending admin approval.
             You will be notified once your account is approved.
           </p>
-          <button className="submit-button" type="button" onClick={handleBackToRoles}>
-            Back to Login
+
+          <button
+            className="submit-button"
+            type="button"
+            onClick={handleBackToRoles}
+          >
+            Back to start
           </button>
         </div>
       )
