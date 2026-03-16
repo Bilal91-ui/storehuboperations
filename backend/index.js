@@ -429,18 +429,8 @@ app.post("/api/auth/register", async (req, res) => {
     db.query("SELECT id, registration_status FROM users WHERE email = ?", [email], async (err, rows) => {
       if (err) return res.status(500).json({ message: "DB error" });
       if (rows.length > 0) {
-        const existingUser = rows[0];
-        if (existingUser.registration_status === 'approved') {
-          return res.status(400).json({ message: "Email already registered and approved" });
-        } else {
-          // Delete the unapproved user to allow re-registration
-          db.query("DELETE FROM users WHERE id = ?", [existingUser.id], (delErr) => {
-            if (delErr) return res.status(500).json({ message: "DB error" });
-            // Proceed with registration
-            proceedWithRegistration();
-          });
-          return;
-        }
+        // If a user has already started registration (approved or pending), block re-registration with the same email.
+        return res.status(400).json({ message: "Email already registered. If you did not complete the process, contact support." });
       }
       proceedWithRegistration();
 
