@@ -1,5 +1,3 @@
-"use client"
-
 import { useState, useEffect, useCallback } from "react"
 import "./home.css"
 import Login from "./login"
@@ -26,6 +24,7 @@ function Home() {
   const [showAccountSettings, setShowAccountSettings] = useState(false)
   const [user, setUser] = useState(null)
   const [featuredProducts, setFeaturedProducts] = useState([])
+  const [searchQuery, setSearchQuery] = useState('')
 
   const [cartItems, setCartItems] = useState([])
 
@@ -96,6 +95,13 @@ function Home() {
     fetchProducts()
     fetchCart()
   }, [fetchCart])
+
+  // Filter products based on search query
+  const filteredProducts = searchQuery 
+    ? featuredProducts.filter(product => 
+        product.name.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : featuredProducts
 
 
   const nearbyStores = [
@@ -317,46 +323,58 @@ function Home() {
         <main className="main-content">
           {/* Search Bar */}
           <div className="search-container">
-            <input type="text" placeholder="Search for products..." className="search-input" />
+            <input 
+              type="text" 
+              placeholder="Search for products..." 
+              className="search-input" 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
           </div>
 
           {/* Featured Products */}
           <section className="section">
             <div className="section-header">
-              <h2 className="section-title">Featured Products</h2>
-              <button className="view-all-btn">View All →</button>
+              <h2 className="section-title">
+                {searchQuery ? `Search Results for "${searchQuery}"` : 'Featured Products'}
+              </h2>
+              <button className="view-all-btn" onClick={() => setSearchQuery('')}>View All →</button>
             </div>
             <div className="products-grid">
-              {featuredProducts.map((product) => (
-                <div key={product.id} className="product-card">
-                  {product.badge && <span className={`badge ${product.badge.toLowerCase()}`}>{product.badge}</span>}
-                  <img src={product.image} alt={product.name} className="product-image" onError={(e) => { e.target.src = '/placeholder.svg' }} />
-                  <div className="product-info">
-                    <h3 className="product-name">{product.name}</h3>
-                    {product.rating && (
-                      <div className="product-rating">
-                        ⭐ {product.rating} ({product.reviews})
-                      </div>
-                    )}
-                    <div className="product-price">
-                      {product.salePrice > 0 && product.basePrice > 0 ? (
-                        <>
-                          <span className="price">Rs {product.salePrice}</span>
-                          <span className="original-price">Rs {product.basePrice}</span>
-                        </>
-                      ) : (
-                        <span className="price">Rs {product.price}</span>
+              {filteredProducts.length > 0 ? (
+                filteredProducts.map((product) => (
+                  <div key={product.id} className="product-card">
+                    {product.badge && <span className={`badge ${product.badge.toLowerCase()}`}>{product.badge}</span>}
+                    <img src={product.image} alt={product.name} className="product-image" onError={(e) => { e.target.src = '/placeholder.svg' }} />
+                    <div className="product-info">
+                      <h3 className="product-name">{product.name}</h3>
+                      {product.rating && (
+                        <div className="product-rating">
+                          ⭐ {product.rating} ({product.reviews})
+                        </div>
                       )}
+                      <div className="product-price">
+                        {product.salePrice > 0 && product.basePrice > 0 ? (
+                          <>
+                            <span className="price">Rs {product.salePrice}</span>
+                            <span className="original-price">Rs {product.basePrice}</span>
+                          </>
+                        ) : (
+                          <span className="price">Rs {product.price}</span>
+                        )}
+                      </div>
+                      <button
+                        className="add-to-cart-btn"
+                        onClick={() => addToCart(product.id)}
+                      >
+                        Add to Cart
+                      </button>
                     </div>
-                    <button
-                      className="add-to-cart-btn"
-                      onClick={() => addToCart(product.id)}
-                    >
-                      Add to Cart
-                    </button>
                   </div>
-                </div>
-              ))}
+                ))
+              ) : (
+                <p className="no-results">No products found matching your search.</p>
+              )}
             </div>
           </section>
 
