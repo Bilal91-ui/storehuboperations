@@ -139,7 +139,8 @@ body {
   font-family: var(--font-sans); /* Modern look for headings */
   font-size: 2.2rem;
   font-weight: 700;
-  color: var(--color-white); /* Changed to white because of dark gradient bg */
+  color: #ba6f43;   /* deep brown */
+  text-shadow: none;             /* Changed to white because of dark gradient bg */
   text-align: center;
   margin-bottom: 2.5rem;
   text-shadow: 0 2px 4px rgba(0,0,0,0.3);
@@ -194,10 +195,12 @@ body {
 .form-title {
   font-size: 1.8rem;
   font-weight: 700;
-  color: var(--color-primary);
+  color: var(--color-primary);   /* deep brown */
   text-align: center;
   margin-bottom: 1.5rem;
   font-family: var(--font-sans);
+  text-shadow: none;             /* remove blur effect */
+
 }
 
 .close-btn {
