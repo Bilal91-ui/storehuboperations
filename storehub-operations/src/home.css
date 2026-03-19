@@ -7,26 +7,24 @@
 }
 
 :root {
-  /* Modern Tech Palette */
-  --color-primary: #0f172a;       /* Slate 900 - Deep dark for headings */
-  --color-brand: #4f46e5;         /* Indigo 600 - Main Brand Color */
-  --color-brand-hover: #4338ca;   /* Indigo 700 - Hover state */
-  --color-accent: #3b82f6;        /* Blue 500 - Accents & borders */
-  
-  --color-text: #334155;          /* Slate 700 - Main body text */
-  --color-text-light: #64748b;    /* Slate 500 - Subtitles/Icons */
-  
+  --color-primary: #1a1a1a;
+  --color-accent: #d4a574; /* Gold/Brown accent */
+  --color-accent-dark: #b88a5d;
+  --color-btn-primary: #965a38; /* Main Buttons */
+  --color-btn-hover: #7d492d;
+  --color-text: #2c2c2c;
+  --color-text-light: #666666;
   --color-white: #ffffff;
-  --color-background: #f8fafc;    /* Slate 50 - Light BG */
-  --color-border: #e2e8f0;        /* Slate 200 - Input borders */
+  --color-background: #fafaf8;
+  --color-border: #e8e6e1;
   
   --font-serif: "Playfair Display", serif;
   --font-sans: "Inter", sans-serif;
   
   --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.08);
-  --shadow-lg: 0 20px 40px rgba(15, 23, 42, 0.2);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.12);
+  --shadow-lg: 0 15px 35px rgba(0, 0, 0, 0.2);
 }
 
 body {
@@ -43,8 +41,8 @@ body {
 .app {
   min-height: 100vh;
   width: 100%;
-  /* A luxurious, cohesive dark slate-to-indigo gradient */
-  background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+  /* Modern blue/purple business gradient */
+  background: radial-gradient(circle at 10% 20%, rgb(69, 86, 169) 0%, rgb(31, 33, 38) 90.2%);
   display: flex;
   flex-direction: column;
 }
@@ -53,7 +51,7 @@ body {
    HEADER
 ========================================= */
 .header {
-  background-color: rgba(255, 255, 255, 0.98);
+  background-color: rgba(255, 255, 255, 0.95);
   padding: 1.2rem 0;
   position: sticky;
   top: 0;
@@ -77,7 +75,7 @@ body {
   font-size: 2rem;
   font-weight: 700;
   letter-spacing: -0.02em;
-  color: var(black);
+  color: var(--color-btn-primary); /* Matched with theme */
 }
 
 .header-actions {
@@ -101,15 +99,15 @@ body {
 }
 
 .btn-primary {
-  background-color: var(--color-brand);
+  background-color: var(--color-btn-primary);
   color: var(--color-white);
   border: none;
 }
 
 .btn-primary:hover {
-  background-color: var(--color-brand-hover);
+  background-color: var(--color-btn-hover);
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+  box-shadow: var(--shadow-md);
 }
 
 .btn-secondary {
@@ -120,7 +118,7 @@ body {
 
 .btn-secondary:hover {
   border-color: var(--color-primary);
-  background-color: var(--color-background);
+  background-color: rgba(0,0,0,0.02);
 }
 
 /* =========================================
@@ -138,13 +136,13 @@ body {
 }
 
 .main-content h2 {
-  font-family: var(--font-sans);
+  font-family: var(--font-sans); /* Modern look for headings */
   font-size: 2.2rem;
   font-weight: 700;
-  color: var(--color-white);
+  color: var(--color-white); /* Changed to white because of dark gradient bg */
   text-align: center;
   margin-bottom: 2.5rem;
-  text-shadow: 0 2px 4px rgba(0,0,0,0.4);
+  text-shadow: 0 2px 4px rgba(0,0,0,0.3);
 }
 
 .role-selection {
@@ -157,10 +155,10 @@ body {
 
 .role-button {
   padding: 1.2rem 2.5rem;
-  border: 2px solid var(--color-brand);
+  border: none;
   border-radius: 12px;
   background-color: var(--color-white);
-  color: var(--color-brand);
+  color: var(--color-text);
   font-size: 1.1rem;
   font-weight: 600;
   cursor: pointer;
@@ -173,7 +171,7 @@ body {
 }
 
 .role-button:hover {
-  background-color: var(--color-brand);
+  background-color: var(--color-btn-primary);
   color: var(--color-white);
   transform: translateY(-5px);
   box-shadow: var(--shadow-lg);
@@ -216,44 +214,44 @@ body {
 }
 
 .close-btn:hover {
-  color: #ef4444; /* Clean Red on hover */
+  color: #ff3b30; /* Red color on hover for close */
 }
 
 /* =========================================
-   SCROLLABLE FORM CONTAINER
+   SCROLLABLE FORM CONTAINER (For Partner Data)
 ========================================= */
 .form-scrollable-container {
-  max-height: 55vh;
+  max-height: 55vh; /* Form will scroll if it gets too long */
   overflow-y: auto;
   padding-right: 10px;
   margin-bottom: 15px;
 }
 
-/* Custom Scrollbar */
+/* Custom Scrollbar Styling */
 .form-scrollable-container::-webkit-scrollbar {
   width: 6px;
 }
 .form-scrollable-container::-webkit-scrollbar-track {
-  background: var(--color-background);
+  background: #f1f1f1;
   border-radius: 10px;
 }
 .form-scrollable-container::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #c1c1c1;
   border-radius: 10px;
 }
 .form-scrollable-container::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #a8a8a8;
 }
 
-/* Category Headings */
+/* Category Headings (Personal, Business, etc.) */
 .signup-form h4 {
   font-size: 0.85rem;
   text-transform: uppercase;
   letter-spacing: 1px;
-  color: var(--color-brand);
+  color: var(--color-btn-primary);
   margin: 20px 0 12px;
   padding-bottom: 5px;
-  border-bottom: 2px solid var(--color-border);
+  border-bottom: 2px solid #f0f0f0;
   font-weight: 700;
 }
 
@@ -272,25 +270,26 @@ body {
   border-radius: 10px;
   font-family: var(--font-sans);
   font-size: 1rem;
-  color: var(--color-primary);
-  background-color: var(--color-background);
+  color: var(--color-text);
+  background-color: #fafafa;
   transition: var(--transition);
 }
 
+/* Fix for Select Box arrow appearance */
 select.form-input {
   appearance: auto;
   cursor: pointer;
 }
 
 .form-input::placeholder {
-  color: #94a3b8;
+  color: #999;
 }
 
 .form-input:focus {
   outline: none;
-  border-color: var(--color-accent);
+  border-color: var(--color-btn-primary);
   background-color: var(--color-white);
-  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15); /* Soft blue glow */
+  box-shadow: 0 0 0 4px rgba(150, 90, 56, 0.1);
 }
 
 /* =========================================
@@ -299,7 +298,7 @@ select.form-input {
 .submit-button {
   width: 100%;
   padding: 14px;
-  background-color: var(--color-brand);
+  background-color: var(--color-btn-primary);
   color: var(--color-white);
   border: none;
   border-radius: 10px;
@@ -311,9 +310,9 @@ select.form-input {
 }
 
 .submit-button:hover {
-  background-color: var(--color-brand-hover);
+  background-color: var(--color-btn-hover);
   transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(79, 70, 229, 0.3);
+  box-shadow: 0 4px 12px rgba(150, 90, 56, 0.3);
 }
 
 .submit-button:active {
@@ -321,7 +320,7 @@ select.form-input {
 }
 
 /* =========================================
-   MEDIA QUERIES
+   MEDIA QUERIES (Responsiveness)
 ========================================= */
 @media (max-width: 768px) {
   .header-content {
