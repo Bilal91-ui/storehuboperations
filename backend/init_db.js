@@ -259,6 +259,25 @@ async function init() {
     `;
     await connection.query(createEmailVerificationTable);
 
+    // Insert sample products if table is empty
+    const [productRows] = await connection.query('SELECT COUNT(*) as count FROM products');
+    if (productRows[0].count === 0) {
+      const sampleProducts = [
+        ['Apple', 50.00, 100, 'Fruits', 'Fresh red apple', '/uploads/apple.jpg'],
+        ['Banana', 30.00, 150, 'Fruits', 'Yellow banana', '/uploads/banana.jpg'],
+        ['Milk', 120.00, 50, 'Dairy Products', 'Fresh cow milk', '/uploads/milk.jpg'],
+        ['Bread', 40.00, 80, 'Bakery and Breakfast', 'White bread loaf', '/uploads/bread.jpg'],
+        ['Chicken Breast', 250.00, 30, 'Meat', 'Fresh chicken breast', '/uploads/chicken.jpg'],
+        ['Orange Juice', 80.00, 60, 'Beverages', 'Fresh orange juice', '/uploads/juice.jpg'],
+        ['Tomato', 25.00, 200, 'Vegetables', 'Red tomato', '/uploads/tomato.jpg'],
+        ['Cheese', 150.00, 40, 'Dairy Products', 'Cheddar cheese', '/uploads/cheese.jpg']
+      ];
+      for (const product of sampleProducts) {
+        await connection.query('INSERT INTO products (name, price, stock, category, description, image, basePrice) VALUES (?, ?, ?, ?, ?, ?, ?)', [...product, product[1]]);
+      }
+      console.log('✅ Sample products inserted');
+    }
+
     console.log('✅ Database `storehub` and all required tables are created or already exist');
     process.exit(0);
   } catch (err) {

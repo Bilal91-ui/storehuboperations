@@ -424,6 +424,14 @@ body {
   background-color: var(--color-background);
 }
 
+.no-results {
+  text-align: center;
+  color: var(--color-text-light);
+  font-size: 1.1rem;
+  padding: 2rem;
+  grid-column: 1 / -1;
+}
+
 /* Products Grid */
 .products-grid {
   display: grid;
