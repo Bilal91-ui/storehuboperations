@@ -14,7 +14,8 @@ console.log("All env vars starting with NODE:", Object.keys(process.env).filter(
 const app = express();
 app.use(cors());
 app.use(express.json());
-// EMAIL SERVICE
+
+// ================= EMAIL SERVICE =================
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
   port: 587,
@@ -38,67 +39,172 @@ const storage = multer.diskStorage({
   }
 });
 const upload = multer({ storage });
-// ================= VERIFY EMAIL =================
 
-app.post("/api/auth/verify-email", (req, res) => {
 
-  const { user_id, otp } = req.body;
+// ================= USER REGISTER (Partner Registration) =================
+app.post("/api/auth/register", async (req, res) => {
+  const {
+    email, password, full_name, role, phone_number, city, cnic_number,
+    // Rider specific
+    vehicle_type, license_number,
+    // Seller specific
+    business_name, store_address, business_type, bank_name, account_title, iban
+  } = req.body;
 
-  db.query(
-    "SELECT * FROM email_verification WHERE user_id = ?",
-    [user_id],
-    (err, rows) => {
+  if (!email || !password || !full_name || !role || !phone_number || !city || !cnic_number) {
+    return res.status(400).json({ message: "All basic fields are required." });
+  }
 
-      if (err) return res.status(500).json({ message: "DB error" });
+  try {
+    // Check if email already exists in main users table
+    db.query("SELECT id FROM users WHERE email = ?", [email], async (err, rows) => {
+      if (err) return res.status(500).json({ message: "DB Error", error: err.message });
+      if (rows.length > 0) {
+        return res.status(400).json({ message: "This email is already registered. Please log in." });
+      }
 
-      if (rows.length === 0)
-        return res.status(400).json({ message: "OTP not found" });
+      try {
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const hash = await bcrypt.hash(password, 10);
 
-      const record = rows[0];
+        // Store all data in JSON format
+        const userData = JSON.stringify({
+          email, password_hash: hash, full_name, role, phone_number, city, cnic_number,
+          vehicle_type, license_number,
+          business_name, store_address, business_type, bank_name, account_title, iban
+        });
 
-      if (record.otp_code != otp)
-        return res.status(400).json({ message: "Invalid OTP" });
+        const tempQuery = `
+          INSERT INTO temp_registrations (email, otp_code, user_data, expires_at) 
+          VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 10 MINUTE))
+          ON DUPLICATE KEY UPDATE 
+            otp_code = VALUES(otp_code), 
+            user_data = VALUES(user_data), 
+            expires_at = DATE_ADD(NOW(), INTERVAL 10 MINUTE)
+        `;
 
-      db.query(
-        "UPDATE email_verification SET is_verified = TRUE, verified_at = NOW() WHERE user_id = ?",
-        [user_id]
-      );
+        db.query(tempQuery,[email, otp, userData], (err) => {
+          if (err) {
+            console.error("Temp Insert Error:", err);
+            return res.status(500).json({ message: "Registration failed.", error: err.message });
+          }
 
-      // Log event for admin review
-      db.query(
-        "INSERT INTO registration_events (user_id, event_type) VALUES (?, 'email_verified')",
-        [user_id]
-      );
+          db.query("SELECT id FROM temp_registrations WHERE email = ?", [email], async (err, tempRows) => {
+            if (err) return res.status(500).json({ message: "ID Fetch Error", error: err.message });
+            
+            const tempId = tempRows[0].id;
 
-      res.json({ message: "Email verified successfully. Awaiting admin approval." });
+            // Send Email OTP 
+            try {
+              if (typeof transporter !== "undefined") {
+                 await transporter.sendMail({
+                  from: process.env.EMAIL_USER,
+                  to: email,
+                  subject: "StoreHub - Email Verification OTP",
+                  text: `Your OTP code is ${otp}. It will expire in 10 minutes.`
+                });
+              }
+            } catch (mailErr) {
+              console.error("Email send error:", mailErr.message);
+            }
 
-    }
-  );
+            console.log(`[DEV] OTP for ${email}: ${otp}`);
 
+            res.json({
+              message: "An OTP has been sent to your email address.",
+              user_id: tempId,
+              otp: process.env.NODE_ENV !== 'production' ? otp : undefined 
+            });
+          });
+        });
+      } catch (hashErr) {
+         return res.status(500).json({ message: "An error occurred while securing the password." });
+      }
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Internal server error." });
+  }
 });
 
+
+// ================= VERIFY EMAIL (Move to Main DB) =================
+app.post("/api/auth/verify-email", async (req, res) => {
+  const { user_id, otp } = req.body;
+
+  if (!user_id || !otp) return res.status(400).json({ message: "OTP is required." });
+
+  try {
+    db.query("SELECT * FROM temp_registrations WHERE id = ?",[user_id], (err, rows) => {
+      if (err) return res.status(500).json({ message: "DB error", error: err.message });
+      if (rows.length === 0) return res.status(400).json({ message: "Session expired. Please sign up again." });
+
+      const tempRecord = rows[0];
+
+      if (new Date() > new Date(tempRecord.expires_at)) {
+        db.query("DELETE FROM temp_registrations WHERE id = ?", [user_id]);
+        return res.status(400).json({ message: "The OTP has expired." });
+      }
+
+      if (tempRecord.otp_code !== otp) {
+        return res.status(400).json({ message: "Invalid OTP." });
+      }
+
+      const userData = typeof tempRecord.user_data === 'string' ? JSON.parse(tempRecord.user_data) : tempRecord.user_data;
+
+      db.query("SELECT id FROM roles WHERE role_name = ?",[userData.role], (err, roleRows) => {
+        if (err || roleRows.length === 0) return res.status(400).json({ message: "Invalid role" });
+        const role_id = roleRows[0].id;
+
+        // => 1. USERS TABLE
+        const userQuery = "INSERT INTO users (email, password_hash, full_name, cnic_number, city, role_id) VALUES (?, ?, ?, ?, ?, ?)";
+        db.query(userQuery,[userData.email, userData.password_hash, userData.full_name, userData.cnic_number, userData.city, role_id], (err, userResult) => {
+          if (err) return res.status(500).json({ message: "Error creating user account", error: err.message });
+
+          const realUserId = userResult.insertId;
+
+          db.query("INSERT INTO registration_events (user_id, event_type) VALUES (?, 'applied')", [realUserId]);
+          db.query("INSERT INTO registration_events (user_id, event_type) VALUES (?, 'email_verified')",[realUserId]);
+
+          // => 2. RIDERS TABLE
+          if (userData.role === "rider") {
+            const riderQuery = "INSERT INTO riders (user_id, vehicle_type, license_number, phone_number) VALUES (?, ?, ?, ?)";
+            db.query(riderQuery,[realUserId, userData.vehicle_type, userData.license_number || null, userData.phone_number]);
+          } 
+          // => 3. SELLERS TABLE
+          else if (userData.role === "seller") {
+            const sellerQuery = "INSERT INTO sellers (user_id, business_name, store_address, store_phone, business_type, bank_name, account_title, iban) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+            db.query(sellerQuery,[realUserId, userData.business_name, userData.store_address, userData.phone_number, userData.business_type, userData.bank_name, userData.account_title, userData.iban]);
+          }
+
+          db.query("INSERT INTO email_verification (user_id, otp_code, is_verified, verified_at) VALUES (?, ?, TRUE, NOW())",[realUserId, tempRecord.otp_code]);
+          db.query("DELETE FROM temp_registrations WHERE id = ?",[user_id]);
+
+          res.json({ message: "Verification successful! Please wait for admin approval." });
+        });
+      });
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+
 // ================= LOGIN =================
-
 app.post("/api/auth/login", async (req, res) => {
-
   const { email, password } = req.body;
 
   db.query(
-    "SELECT * FROM users WHERE email = ?",
-    [email],
+    "SELECT * FROM users WHERE email = ?",[email],
     async (err, rows) => {
-
       if (err) return res.status(500).json({ message: "DB error" });
-
-      if (rows.length === 0)
-        return res.status(400).json({ message: "User not found" });
+      if (rows.length === 0) return res.status(400).json({ message: "User not found" });
 
       const user = rows[0];
-
       const match = await bcrypt.compare(password, user.password_hash);
 
-      if (!match)
-        return res.status(400).json({ message: "Invalid password" });
+      if (!match) return res.status(400).json({ message: "Invalid password" });
 
       if (user.registration_status !== "approved")
         return res.status(403).json({ message: "Account not approved yet" });
@@ -108,15 +214,12 @@ app.post("/api/auth/login", async (req, res) => {
         user_id: user.id,
         role_id: user.role_id
       });
-
     }
   );
-
 });
 
-// ---------------- PRODUCTS ----------------
 
-// Add Product (multipart: image optional)
+// ---------------- PRODUCTS ----------------
 app.post("/api/products", upload.single("image"), (req, res) => {
   const { name, price, stock, category, description } = req.body;
   const imagePath = req.file ? `/uploads/${req.file.filename}` : null;
@@ -129,7 +232,7 @@ app.post("/api/products", upload.single("image"), (req, res) => {
     INSERT INTO products (name, price, stock, category, description, image, basePrice)
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `;
-  db.query(sql, [name, price, stock, category || null, description || null, imagePath, price], (err, result) => {
+  db.query(sql,[name, price, stock, category || null, description || null, imagePath, price], (err, result) => {
     if (err) {
       console.error("Insert product error:", err);
       return res.status(500).json({ message: "Database error" });
@@ -138,7 +241,6 @@ app.post("/api/products", upload.single("image"), (req, res) => {
   });
 });
 
-// Get all products
 app.get("/api/products", (req, res) => {
   db.query("SELECT * FROM products ORDER BY id DESC", (err, rows) => {
     if (err) {
@@ -149,7 +251,6 @@ app.get("/api/products", (req, res) => {
   });
 });
 
-// Update product (supports new image)
 app.put("/api/products/:id", upload.single("image"), (req, res) => {
   const { id } = req.params;
   const { name, price, stock, category, description, image } = req.body;
@@ -160,7 +261,7 @@ app.put("/api/products/:id", upload.single("image"), (req, res) => {
     SET name = ?, price = ?, stock = ?, category = ?, description = ?, image = ?
     WHERE id = ?
   `;
-  db.query(sql, [name, price, stock, category || null, description || null, imagePath, id], (err, result) => {
+  db.query(sql,[name, price, stock, category || null, description || null, imagePath, id], (err, result) => {
     if (err) {
       console.error("Update product error:", err);
       return res.status(500).json({ message: "Database error" });
@@ -170,10 +271,9 @@ app.put("/api/products/:id", upload.single("image"), (req, res) => {
   });
 });
 
-// Delete product
 app.delete("/api/products/:id", (req, res) => {
   const { id } = req.params;
-  db.query("DELETE FROM products WHERE id = ?", [id], (err, result) => {
+  db.query("DELETE FROM products WHERE id = ?",[id], (err, result) => {
     if (err) {
       console.error("Delete product error:", err);
       return res.status(500).json({ message: "Database error" });
@@ -183,6 +283,7 @@ app.delete("/api/products/:id", (req, res) => {
   });
 });
 
+
 // ---------------- PRICING ----------------
 app.put("/api/products/:id/pricing", (req, res) => {
   const { id } = req.params;
@@ -190,15 +291,15 @@ app.put("/api/products/:id/pricing", (req, res) => {
 
   if (basePrice == null || basePrice < 0) return res.status(400).json({ message: "Base price must be a positive number" });
 
-  const discount = Math.max(0, Math.min(100, discountPercent || 0)); // Limit discount to 0-100%
-  const salePrice = Math.max(0, basePrice - (basePrice * (discount / 100))); // Ensure sale price is not negative
+  const discount = Math.max(0, Math.min(100, discountPercent || 0)); 
+  const salePrice = Math.max(0, basePrice - (basePrice * (discount / 100))); 
 
   const sql = `
     UPDATE products
     SET basePrice = ?, discountPercent = ?, salePrice = ?, promoStart = ?, promoEnd = ?
     WHERE id = ?
   `;
-  db.query(sql, [basePrice, discount, salePrice, discount > 0 ? startDate : null, discount > 0 ? endDate : null, id], (err, result) => {
+  db.query(sql,[basePrice, discount, salePrice, discount > 0 ? startDate : null, discount > 0 ? endDate : null, id], (err, result) => {
     if (err) {
       console.error("Pricing update error:", err);
       return res.status(500).json({ message: "Database error" });
@@ -208,12 +309,8 @@ app.put("/api/products/:id/pricing", (req, res) => {
   });
 });
 
+
 // ---------------- CART ----------------
-// NOTE: run this SQL once if not present:
-// CREATE TABLE cart ( id INT AUTO_INCREMENT PRIMARY KEY, product_id INT NOT NULL, quantity INT DEFAULT 1, FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE );
-
-
-// Get Cart items (returns cart.id, quantity and full product data)
 app.get("/api/cart", (req, res) => {
   const sql = `
     SELECT cart.id AS cart_id, cart.quantity, products.*
@@ -226,8 +323,6 @@ app.get("/api/cart", (req, res) => {
       console.error("Cart fetch error:", err);
       return res.status(500).json({ message: "Database error" });
     }
-
-    // transform rows: supply cart.id as id (so frontend can use item.id)
     const out = rows.map(r => ({
       id: r.cart_id,
       quantity: r.quantity,
@@ -238,12 +333,10 @@ app.get("/api/cart", (req, res) => {
       basePrice: r.basePrice,
       image: r.image
     }));
-
     res.json(out);
   });
 });
 
-// Add to cart (increase if exists)
 app.post("/api/cart", (req, res) => {
   const { product_id, quantity } = req.body;
   if (!product_id) return res.status(400).json({ message: "Product ID required" });
@@ -257,7 +350,7 @@ app.post("/api/cart", (req, res) => {
     if (rows.length > 0) {
       const existing = rows[0];
       const newQty = (existing.quantity || 0) + (quantity || 1);
-      db.query("UPDATE cart SET quantity = ? WHERE id = ?", [newQty, existing.id], (err2) => {
+      db.query("UPDATE cart SET quantity = ? WHERE id = ?",[newQty, existing.id], (err2) => {
         if (err2) {
           console.error("Cart update error:", err2);
           return res.status(500).json({ message: "Database error" });
@@ -265,7 +358,7 @@ app.post("/api/cart", (req, res) => {
         return res.json({ message: "Cart updated" });
       });
     } else {
-      db.query("INSERT INTO cart (product_id, quantity) VALUES (?, ?)", [product_id, quantity || 1], (err3) => {
+      db.query("INSERT INTO cart (product_id, quantity) VALUES (?, ?)",[product_id, quantity || 1], (err3) => {
         if (err3) {
           console.error("Cart insert error:", err3);
           return res.status(500).json({ message: "Database error" });
@@ -276,7 +369,6 @@ app.post("/api/cart", (req, res) => {
   });
 });
 
-// Update cart item quantity (cart id)
 app.put("/api/cart/:id", (req, res) => {
   const { id } = req.params;
   const { quantity } = req.body;
@@ -293,7 +385,7 @@ app.put("/api/cart/:id", (req, res) => {
     return;
   }
 
-  db.query("UPDATE cart SET quantity = ? WHERE id = ?", [quantity, id], (err) => {
+  db.query("UPDATE cart SET quantity = ? WHERE id = ?",[quantity, id], (err) => {
     if (err) {
       console.error("Cart update error:", err);
       return res.status(500).json({ message: "Database error" });
@@ -302,7 +394,6 @@ app.put("/api/cart/:id", (req, res) => {
   });
 });
 
-// Delete cart item
 app.delete("/api/cart/:id", (req, res) => {
   const { id } = req.params;
   db.query("DELETE FROM cart WHERE id = ?", [id], (err) => {
@@ -314,36 +405,23 @@ app.delete("/api/cart/:id", (req, res) => {
   });
 });
 
-// ---------------- OTP & SMS SERVICE ----------------
-// Simple OTP storage (in production, use Redis or database)
+
+// ---------------- OTP & SMS SERVICE (For Orders) ----------------
 const otpStore = new Map();
 
-// Generate 6-digit OTP
 function generateOTP() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-// SMS Service Integration
 async function sendSMS(phoneNumber, message) {
   console.log(`📱 Attempting to send SMS to ${phoneNumber}: ${message}`);
-  console.log("sendSMS - NODE_ENV:", process.env.NODE_ENV);
-  console.log("sendSMS - is development:", process.env.NODE_ENV !== 'production');
-
-  // Always log OTP for debugging
-  console.log(`🔥 DEBUG: OTP CODE: ${message.match(/(\d{6})/)?.[1] || 'N/A'}`);
-  console.log(`🔥 DEBUG: Use this OTP for testing: ${message.match(/(\d{6})/)?.[1] || 'N/A'}`);
-
-  // Development mode: Show OTP in console for testing
+  
   if (process.env.NODE_ENV !== 'production') {
     console.log(`🔥 DEVELOPMENT MODE: OTP would be sent to ${phoneNumber}`);
-    console.log(`🔥 OTP CODE: ${message.match(/(\d{6})/)?.[1] || 'N/A'}`);
-    console.log(`🔥 Use this OTP for testing: ${message.match(/(\d{6})/)?.[1] || 'N/A'}`);
     return true;
   }
 
-  // Production SMS integration
   try {
-    // Option 1: Twilio (works internationally)
     if (process.env.TWILIO_SID && process.env.TWILIO_TOKEN) {
       const twilio = require('twilio');
       const client = twilio(process.env.TWILIO_SID, process.env.TWILIO_TOKEN);
@@ -352,205 +430,22 @@ async function sendSMS(phoneNumber, message) {
         from: process.env.TWILIO_PHONE,
         to: phoneNumber.startsWith('+') ? phoneNumber : `+92${phoneNumber.slice(1)}`
       });
-      console.log(`✅ SMS sent via Twilio to ${phoneNumber}`);
       return true;
     }
-
-    // Option 2: Jazz SMS API (Pakistan)
-    if (process.env.JAZZ_API_KEY && process.env.JAZZ_API_SECRET) {
-      const axios = require('axios');
-      const response = await axios.post('https://api.jazz.com/sms/send', {
-        to: phoneNumber.startsWith('+') ? phoneNumber : `+92${phoneNumber.slice(1)}`,
-        message: message
-      }, {
-        headers: {
-          'Authorization': `Bearer ${process.env.JAZZ_API_KEY}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      console.log(`✅ SMS sent via Jazz API to ${phoneNumber}`);
-      return true;
-    }
-
-    // Option 3: MSG91 (works in Pakistan)
-    if (process.env.MSG91_AUTH_KEY) {
-      const axios = require('axios');
-      const response = await axios.post(`https://api.msg91.com/api/v2/sendsms`, {
-        sender: process.env.MSG91_SENDER_ID || 'STOREHB',
-        route: '4', // Transactional route
-        country: '92',
-        sms: [{
-          message: message,
-          to: [phoneNumber.startsWith('+') ? phoneNumber.slice(3) : phoneNumber.slice(1)]
-        }]
-      }, {
-        headers: {
-          'authkey': process.env.MSG91_AUTH_KEY,
-          'Content-Type': 'application/json'
-        }
-      });
-      console.log(`✅ SMS sent via MSG91 to ${phoneNumber}`);
-      return true;
-    }
-
-    // Fallback: Log the message (for development)
     console.log(`⚠️  No SMS service configured. OTP would be: ${message.match(/(\d{6})/)?.[1] || 'N/A'}`);
-    console.log(`⚠️  Add environment variables for real SMS service`);
     return true;
-
   } catch (error) {
     console.error('❌ SMS sending failed:', error.message);
     throw new Error('Failed to send SMS');
   }
 }
-// ================= USER REGISTER =================
-
-app.post("/api/auth/register", async (req, res) => {
-
-  const {
-    email,
-    password,
-    full_name,
-    role,
-    phone_number,
-    vehicle_type,
-    license_number,
-    business_name,
-    store_address
-  } = req.body;
-
-  if (!email || !password || !full_name || !role) {
-    return res.status(400).json({ message: "Missing required fields" });
-  }
-
-  try {
-
-    // Check if email already exists
-    db.query("SELECT id, registration_status FROM users WHERE email = ?", [email], async (err, rows) => {
-      if (err) return res.status(500).json({ message: "DB error" });
-      if (rows.length > 0) {
-        // If a user has already started registration (approved or pending), block re-registration with the same email.
-        return res.status(400).json({ message: "Email already registered. If you did not complete the process, contact support." });
-      }
-      proceedWithRegistration();
-
-      async function proceedWithRegistration() {
-        const hash = await bcrypt.hash(password, 10);
-
-        // get role id
-        db.query("SELECT id FROM roles WHERE role_name = ?", [role], async (err, roleRows) => {
-
-          if (err) return res.status(500).json({ message: "DB error" });
-          if (roleRows.length === 0) return res.status(400).json({ message: "Invalid role" });
-
-          const role_id = roleRows[0].id;
-
-          db.query(
-            "INSERT INTO users (email,password_hash,full_name,role_id) VALUES (?,?,?,?)",
-            [email, hash, full_name, role_id],
-            async (err, result) => {
-
-              if (err) {
-                console.error(err);
-                return res.status(500).json({ message: "User creation failed" });
-              }
-
-              const userId = result.insertId;
-
-              // Log registration event
-              db.query(
-                "INSERT INTO registration_events (user_id, event_type) VALUES (?, 'applied')",
-                [userId]
-              );
-
-              // rider data
-              if (role === "rider") {
-
-                db.query(
-                  `INSERT INTO riders (user_id, vehicle_type, license_number, phone_number)
-                   VALUES (?,?,?,?)`,
-                  [userId, vehicle_type, license_number, phone_number]
-                );
-
-              }
-
-              // seller data
-              if (role === "seller") {
-
-                db.query(
-                  `INSERT INTO sellers (user_id,business_name,store_address,store_phone)
-                   VALUES (?,?,?,?)`,
-                  [userId, business_name, store_address, phone_number]
-                );
-
-              }
-
-              // generate email OTP
-              const otp = Math.floor(100000 + Math.random() * 900000);
-
-              db.query(
-                `INSERT INTO email_verification (user_id,otp_code,otp_expires_at)
-                 VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 10 MINUTE))`,
-                [userId, otp]
-              );
-
-              // send email
-              try {
-                await transporter.sendMail({
-                  from: process.env.EMAIL_USER,
-                  to: email,
-                  subject: "Email Verification OTP",
-                  text: `Your OTP code is ${otp}`
-                });
-                console.log("Email sent successfully");
-              } catch (err) {
-                console.error("Email send error:", err.message);
-                // Continue anyway, return OTP for verification
-              }
-
-              console.log("[DEV] OTP for user", userId, "is", otp);
-
-              const responsePayload = {
-                message: "User registered. Verify email.",
-                user_id: userId
-              };
-
-              // Always return OTP in development for testing
-              if (process.env.NODE_ENV !== 'production') {
-                responsePayload.otp = otp;
-              }
-
-              res.json(responsePayload);
-
-            }
-          );
-
-        });
-      }
-    });
-
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Server error" });
-  }
-
-});
 
 
 // ---------------- ORDERS ----------------
-
-// Create Order
 app.post("/api/orders", (req, res) => {
   const {
-    customer_name,
-    customer_email,
-    customer_phone,
-    shipping_address,
-    payment_method,
-    cart_items,
-    subtotal,
-    shipping_cost = 10.0,
-    tax_amount
+    customer_name, customer_email, customer_phone, shipping_address,
+    payment_method, cart_items, subtotal, shipping_cost = 10.0, tax_amount
   } = req.body;
 
   if (!customer_name || !customer_email || !customer_phone || !shipping_address || !payment_method || !cart_items || cart_items.length === 0) {
@@ -560,36 +455,28 @@ app.post("/api/orders", (req, res) => {
   const total_amount = subtotal + shipping_cost + tax_amount;
   const order_number = `ORD${Date.now()}`;
 
-  // Start transaction
   db.beginTransaction((err) => {
-    if (err) {
-      console.error("Transaction start error:", err);
-      return res.status(500).json({ message: "Database error" });
-    }
+    if (err) return res.status(500).json({ message: "Database error" });
 
-    // Insert order
     const orderSql = `
       INSERT INTO orders (order_number, customer_name, customer_email, customer_phone, shipping_address,
                          payment_method, subtotal, shipping_cost, tax_amount, total_amount)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
-    db.query(orderSql, [order_number, customer_name, customer_email, customer_phone, shipping_address,
+    db.query(orderSql,[order_number, customer_name, customer_email, customer_phone, shipping_address,
                         payment_method, subtotal, shipping_cost, tax_amount, total_amount], (err, result) => {
-      if (err) {
-        console.error("Order insert error:", err);
-        return db.rollback(() => res.status(500).json({ message: "Database error", details: err.message }));
-      }
+      if (err) return db.rollback(() => res.status(500).json({ message: "Database error", details: err.message }));
+      
       const orderId = result.insertId;
 
-      // Insert order items
       const itemPromises = cart_items.map(item => {
         return new Promise((resolve, reject) => {
           const itemSql = `
             INSERT INTO order_items (order_id, product_id, product_name, product_price, quantity, total_price)
             VALUES (?, ?, ?, ?, ?, ?)
           `;
-          db.query(itemSql, [orderId, item.product_id, item.name, item.price, item.quantity, item.price * item.quantity], (err) => {
+          db.query(itemSql,[orderId, item.product_id, item.name, item.price, item.quantity, item.price * item.quantity], (err) => {
             if (err) reject(err);
             else resolve();
           });
@@ -600,11 +487,7 @@ app.post("/api/orders", (req, res) => {
         .then(() => {
           const finalizeOrder = () => {
             db.commit((err) => {
-              if (err) {
-                console.error("Transaction commit error:", err);
-                return db.rollback(() => res.status(500).json({ message: "Database error" }));
-              }
-
+              if (err) return db.rollback(() => res.status(500).json({ message: "Database error" }));
               res.json({
                 message: "Order created successfully",
                 order_id: orderId,
@@ -615,13 +498,11 @@ app.post("/api/orders", (req, res) => {
           };
 
           if (payment_method === "cod") {
-            // Clear cart immediately for COD orders (finalized immediately)
             db.query("DELETE FROM cart", (err) => {
               if (err) console.error("Cart clear error:", err);
               finalizeOrder();
             });
           } else {
-            // For other payment methods (e.g., Easypaisa), keep cart until payment is verified
             finalizeOrder();
           }
         })
@@ -633,45 +514,28 @@ app.post("/api/orders", (req, res) => {
   });
 });
 
-// Send OTP for payment verification
 app.post("/api/orders/:orderId/send-otp", async (req, res) => {
   const { orderId } = req.params;
   const { phone_number } = req.body;
 
-  if (!phone_number) {
-    return res.status(400).json({ message: "Phone number required" });
-  }
+  if (!phone_number) return res.status(400).json({ message: "Phone number required" });
 
-  // Generate OTP (as string to avoid type mismatch)
-  const otp = (Math.floor(100000 + Math.random()*900000)).toString();
-  console.log("Generated OTP:", otp);
-  console.log("NODE_ENV:", process.env.NODE_ENV);
-  console.log("Is development mode:", process.env.NODE_ENV !== 'production');
-
-  // Store OTP with expiration (5 minutes)
+  const otp = generateOTP();
   otpStore.set(`order_${orderId}`, {
     otp: otp,
     phone: phone_number,
-    expires: Date.now() + 5 * 60 * 1000 // 5 minutes
+    expires: Date.now() + 5 * 60 * 1000 
   });
 
-  // Update order with OTP
   db.query("UPDATE orders SET otp_code = ?, otp_sent_at = NOW() WHERE id = ?", [otp, orderId], async (err) => {
-    if (err) {
-      console.error("OTP update error:", err);
-      return res.status(500).json({ message: "Database error" });
-    }
+    if (err) return res.status(500).json({ message: "Database error" });
 
-    // Send SMS
     try {
       const message = `Your StoreHub order OTP is: ${otp}. Valid for 5 minutes.`;
-      console.log("About to send SMS with message:", message);
       await sendSMS(phone_number, message);
 
       const payload = { message: "OTP sent successfully" };
-      if (process.env.NODE_ENV !== 'production') {
-        payload.otp = otp;
-      }
+      if (process.env.NODE_ENV !== 'production') payload.otp = otp;
       res.json(payload);
     } catch (smsError) {
       console.error("SMS send error:", smsError);
@@ -680,19 +544,14 @@ app.post("/api/orders/:orderId/send-otp", async (req, res) => {
   });
 });
 
-// Verify OTP and complete payment
 app.post("/api/orders/:orderId/verify-otp", (req, res) => {
   const { orderId } = req.params;
   const { otp } = req.body;
 
-  if (!otp) {
-    return res.status(400).json({ message: "OTP required" });
-  }
+  if (!otp) return res.status(400).json({ message: "OTP required" });
 
   const otpData = otpStore.get(`order_${orderId}`);
-  if (!otpData) {
-    return res.status(400).json({ message: "OTP not found or expired" });
-  }
+  if (!otpData) return res.status(400).json({ message: "OTP not found or expired" });
 
   if (Date.now() > otpData.expires) {
     otpStore.delete(`order_${orderId}`);
@@ -703,73 +562,43 @@ app.post("/api/orders/:orderId/verify-otp", (req, res) => {
     return res.status(400).json({ message: "Invalid OTP" });
   }
 
-  // Update order as paid and verified
   db.query(
     "UPDATE orders SET payment_status = 'paid', otp_verified = TRUE, order_status = 'confirmed' WHERE id = ?",
     [orderId],
     (err) => {
-      if (err) {
-        console.error("Order update error:", err);
-        return res.status(500).json({ message: "Database error" });
-      }
+      if (err) return res.status(500).json({ message: "Database error" });
 
-      // Clear the cart after successful payment verification
       db.query("DELETE FROM cart", (cartErr) => {
         if (cartErr) console.error("Cart clear error:", cartErr);
-
-        // Clear OTP
         otpStore.delete(`order_${orderId}`);
-
         res.json({ message: "Payment verified successfully" });
       });
     }
   );
 });
 
-// Get order details
 app.get("/api/orders/:orderId", (req, res) => {
   const { orderId } = req.params;
-
   const orderSql = "SELECT * FROM orders WHERE id = ? OR order_number = ?";
+  
   db.query(orderSql, [orderId, orderId], (err, orderRows) => {
-    if (err) {
-      console.error("Order fetch error:", err);
-      return res.status(500).json({ message: "Database error" });
-    }
-
-    if (orderRows.length === 0) {
-      return res.status(404).json({ message: "Order not found" });
-    }
+    if (err) return res.status(500).json({ message: "Database error" });
+    if (orderRows.length === 0) return res.status(404).json({ message: "Order not found" });
 
     const order = orderRows[0];
-
-    // Get order items
     const itemsSql = "SELECT * FROM order_items WHERE order_id = ?";
     db.query(itemsSql, [order.id], (err, itemRows) => {
-      if (err) {
-        console.error("Order items fetch error:", err);
-        return res.status(500).json({ message: "Database error" });
-      }
-
-      res.json({
-        order: order,
-        items: itemRows
-      });
+      if (err) return res.status(500).json({ message: "Database error" });
+      res.json({ order: order, items: itemRows });
     });
   });
 });
 
-// Get orders by phone number (for tracking)
 app.get("/api/orders/track/:phone", (req, res) => {
   const { phone } = req.params;
-
   const sql = "SELECT id, order_number, order_status, total_amount, created_at FROM orders WHERE customer_phone = ? ORDER BY created_at DESC";
   db.query(sql, [phone], (err, rows) => {
-    if (err) {
-      console.error("Orders fetch error:", err);
-      return res.status(500).json({ message: "Database error" });
-    }
-
+    if (err) return res.status(500).json({ message: "Database error" });
     res.json(rows);
   });
 });
@@ -778,4 +607,3 @@ app.get("/", (req, res) => res.json({ status: "ok" }));
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-

@@ -7,36 +7,54 @@
 }
 
 :root {
-  --color-primary: #1a1a1a;
-  --color-accent: #d4a574;
-  --color-text: #2c2c2c;
+  /* Modern Tech Palette */
+  --color-primary: #0f172a;       /* Slate 900 - Deep dark for headings */
+  --color-brand: #4f46e5;         /* Indigo 600 - Main Brand Color */
+  --color-brand-hover: #4338ca;   /* Indigo 700 - Hover state */
+  --color-accent: #3b82f6;        /* Blue 500 - Accents & borders */
+  
+  --color-text: #334155;          /* Slate 700 - Main body text */
+  --color-text-light: #64748b;    /* Slate 500 - Subtitles/Icons */
+  
   --color-white: #ffffff;
-  --color-background: #fafaf8;
-  --color-border: #e8e6e1;
+  --color-background: #f8fafc;    /* Slate 50 - Light BG */
+  --color-border: #e2e8f0;        /* Slate 200 - Input borders */
+  
   --font-serif: "Playfair Display", serif;
   --font-sans: "Inter", sans-serif;
+  
   --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.04);
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.08);
+  --shadow-lg: 0 20px 40px rgba(15, 23, 42, 0.2);
 }
 
 body {
   font-family: var(--font-sans);
-  background-color: var(--color-background);
   color: var(--color-text);
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* =========================================
+   APP WRAPPER & BACKGROUND
+========================================= */
 .app {
   min-height: 100vh;
+  width: 100%;
+  /* A luxurious, cohesive dark slate-to-indigo gradient */
+  background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+  display: flex;
+  flex-direction: column;
 }
 
+/* =========================================
+   HEADER
+========================================= */
 .header {
-  background-color: rgba(255, 255, 255, 0.95);
-  color: var(--color-primary);
-  padding: 1.5rem 0;
+  background-color: rgba(255, 255, 255, 0.98);
+  padding: 1.2rem 0;
   position: sticky;
   top: 0;
   z-index: 100;
@@ -59,37 +77,39 @@ body {
   font-size: 2rem;
   font-weight: 700;
   letter-spacing: -0.02em;
-  color: var(--color-primary);
+  color: var(black);
 }
 
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 1rem;
 }
 
+/* =========================================
+   BUTTONS (General)
+========================================= */
 .btn-primary,
 .btn-secondary {
-  padding: 0.75rem 1.75rem;
-  border: none;
+  padding: 0.6rem 1.5rem;
   border-radius: 50px;
   cursor: pointer;
   font-size: 0.95rem;
-  font-weight: 500;
+  font-weight: 600;
   font-family: var(--font-sans);
   transition: var(--transition);
-  letter-spacing: 0.01em;
 }
 
 .btn-primary {
-  background-color: #965a38;
+  background-color: var(--color-brand);
   color: var(--color-white);
+  border: none;
 }
 
 .btn-primary:hover {
-  background-color: #965a38;
+  background-color: var(--color-brand-hover);
   transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
 }
 
 .btn-secondary {
@@ -103,95 +123,225 @@ body {
   background-color: var(--color-background);
 }
 
+/* =========================================
+   MAIN CONTENT & ROLE SELECTION
+========================================= */
 .main-content {
-  padding: 2rem;
-  max-width: 800px;
+  padding: 3rem 2rem;
+  max-width: 900px;
   margin: 0 auto;
-  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
 
 .main-content h2 {
-  font-family: var(--font-serif);
-  font-size: 2rem;
-  font-weight: 600;
-  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 2.2rem;
+  font-weight: 700;
+  color: var(--color-white);
   text-align: center;
-  margin-bottom: 2rem;
+  margin-bottom: 2.5rem;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.4);
 }
 
 .role-selection {
   display: flex;
   justify-content: center;
-  gap: 2rem;
+  gap: 1.5rem;
   flex-wrap: wrap;
+  width: 100%;
 }
 
 .role-button {
-  padding: 1rem 2rem;
-  border: 2px solid var(--color-accent);
+  padding: 1.2rem 2.5rem;
+  border: 2px solid var(--color-brand);
   border-radius: 12px;
   background-color: var(--color-white);
-  color: var(--color-accent);
+  color: var(--color-brand);
   font-size: 1.1rem;
   font-weight: 600;
   cursor: pointer;
   transition: var(--transition);
   font-family: var(--font-sans);
+  box-shadow: var(--shadow-md);
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .role-button:hover {
-  background-color: var(--color-accent);
+  background-color: var(--color-brand);
   color: var(--color-white);
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
+  transform: translateY(-5px);
+  box-shadow: var(--shadow-lg);
 }
 
-/* 1. Make the form the "anchor" for positioning */
+/* =========================================
+   SIGNUP / LOGIN FORM BOX
+========================================= */
 .signup-form {
-  position: relative; /* Essential! */
-  padding: 40px;      /* Ensure there is space inside so text doesn't hit the edges */
-  /* ... keep your other existing styles like width, background, etc. */
+  position: relative;
+  background: var(--color-white);
+  padding: 40px;
+  width: 100%;
+  max-width: 500px;
+  border-radius: 20px;
+  box-shadow: var(--shadow-lg);
+  margin: 0 auto;
 }
 
-/* 2. Position the button absolutely within the form */
+.form-title {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--color-primary);
+  text-align: center;
+  margin-bottom: 1.5rem;
+  font-family: var(--font-sans);
+}
+
 .close-btn {
   position: absolute;
-  top: 15px;         /* Distance from the top edge */
-  right: 15px;       /* Distance from the right edge */
-  
-  /* Styling to make it look clean */
+  top: 15px;
+  right: 20px;
   background: transparent;
   border: none;
-  font-size: 1.5rem; /* Make the X visible */
+  font-size: 1.5rem;
   font-weight: bold;
   cursor: pointer;
-  color: #666;
-  line-height: 1;
+  color: var(--color-text-light);
   transition: color 0.2s;
 }
 
-/* Optional: Hover effect */
 .close-btn:hover {
-  color: #000; /* Darker color on hover */
+  color: #ef4444; /* Clean Red on hover */
 }
 
+/* =========================================
+   SCROLLABLE FORM CONTAINER
+========================================= */
+.form-scrollable-container {
+  max-height: 55vh;
+  overflow-y: auto;
+  padding-right: 10px;
+  margin-bottom: 15px;
+}
+
+/* Custom Scrollbar */
+.form-scrollable-container::-webkit-scrollbar {
+  width: 6px;
+}
+.form-scrollable-container::-webkit-scrollbar-track {
+  background: var(--color-background);
+  border-radius: 10px;
+}
+.form-scrollable-container::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 10px;
+}
+.form-scrollable-container::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Category Headings */
+.signup-form h4 {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--color-brand);
+  margin: 20px 0 12px;
+  padding-bottom: 5px;
+  border-bottom: 2px solid var(--color-border);
+  font-weight: 700;
+}
+
+.signup-form h4:first-child {
+  margin-top: 0;
+}
+
+/* =========================================
+   FORM INPUTS
+========================================= */
+.form-input {
+  width: 100%;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  border: 1.5px solid var(--color-border);
+  border-radius: 10px;
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  color: var(--color-primary);
+  background-color: var(--color-background);
+  transition: var(--transition);
+}
+
+select.form-input {
+  appearance: auto;
+  cursor: pointer;
+}
+
+.form-input::placeholder {
+  color: #94a3b8;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  background-color: var(--color-white);
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15); /* Soft blue glow */
+}
+
+/* =========================================
+   SUBMIT BUTTON (Inside Form)
+========================================= */
+.submit-button {
+  width: 100%;
+  padding: 14px;
+  background-color: var(--color-brand);
+  color: var(--color-white);
+  border: none;
+  border-radius: 10px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+  margin-top: 10px;
+}
+
+.submit-button:hover {
+  background-color: var(--color-brand-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(79, 70, 229, 0.3);
+}
+
+.submit-button:active {
+  transform: translateY(0);
+}
+
+/* =========================================
+   MEDIA QUERIES
+========================================= */
 @media (max-width: 768px) {
   .header-content {
     padding: 0 1rem;
   }
-
+  
   .logo {
     font-size: 1.5rem;
   }
 
-  .btn-primary,
-  .btn-secondary {
-    padding: 0.625rem 1.25rem;
-    font-size: 0.875rem;
+  .main-content {
+    padding: 2rem 1rem;
   }
 
-  .main-content {
-    padding: 1.5rem 1rem;
+  .main-content h2 {
+    font-size: 1.8rem;
+  }
+
+  .signup-form {
+    padding: 30px 20px;
   }
 }
 
@@ -199,31 +349,20 @@ body {
   .role-selection {
     flex-direction: column;
     align-items: center;
-    gap: 1rem;
   }
 
   .role-button {
     width: 100%;
-    max-width: 300px;
+    max-width: 320px;
+    justify-content: center;
   }
-}
-
-@media (max-width: 480px) {
+  
   .header-actions {
     gap: 0.5rem;
   }
-
-  .btn-secondary {
-    padding: 0.625rem 1rem;
+  
+  .btn-primary, .btn-secondary {
+    padding: 0.5rem 1rem;
+    font-size: 0.85rem;
   }
-}
-.app {
-  min-height: 100vh;
-  width: 100%;
-  
-  /* A modern blue/purple gradient suitable for business */
-  background: radial-gradient(circle at 10% 20%, rgb(69, 86, 169) 0%, rgb(31, 33, 38) 90.2%);
-  
-  display: flex;
-  flex-direction: column;
 }
