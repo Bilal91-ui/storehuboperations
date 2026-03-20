@@ -192,11 +192,27 @@ app.post("/api/auth/verify-email", async (req, res) => {
 
 
 // ================= LOGIN =================
+// ================= LOGIN =================
 app.post("/api/auth/login", async (req, res) => {
   const { email, password } = req.body;
 
+  // 1. HARDCODED ADMIN LOGIN
+  if (email === "admin@storehub.com" && password === "admin123") {
+    return res.json({
+      message: "Admin login successful",
+      user_id: 0, 
+      role_id: 3, 
+      role: "admin" // <-- Yahan role bhejna zaroori hai
+    });
+  }
+
+  // 2. NORMAL USER/PARTNER LOGIN
   db.query(
-    "SELECT * FROM users WHERE email = ?",[email],
+    `SELECT u.*, r.role_name 
+     FROM users u 
+     JOIN roles r ON u.role_id = r.id 
+     WHERE u.email = ?`,
+    [email],
     async (err, rows) => {
       if (err) return res.status(500).json({ message: "DB error" });
       if (rows.length === 0) return res.status(400).json({ message: "User not found" });
@@ -207,17 +223,17 @@ app.post("/api/auth/login", async (req, res) => {
       if (!match) return res.status(400).json({ message: "Invalid password" });
 
       if (user.registration_status !== "approved")
-        return res.status(403).json({ message: "Account not approved yet" });
+        return res.status(403).json({ message: "Account is pending admin approval." });
 
       res.json({
         message: "Login success",
         user_id: user.id,
-        role_id: user.role_id
+        role_id: user.role_id,
+        role: user.role_name // <-- Asal DB role frontend ko bhejein
       });
     }
   );
 });
-
 
 // ---------------- PRODUCTS ----------------
 app.post("/api/products", upload.single("image"), (req, res) => {
@@ -604,6 +620,125 @@ app.get("/api/orders/track/:phone", (req, res) => {
 });
 
 app.get("/", (req, res) => res.json({ status: "ok" }));
+// ================= ADMIN APIS (Approve/Reject Partners) =================
 
+// Get all pending applications
+app.get("/api/admin/applications", (req, res) => {
+  const query = `
+    SELECT u.id, u.email, u.full_name, u.cnic_number, u.city, u.registration_status, u.created_at, r.role_name,
+           rd.vehicle_type, rd.license_number, rd.phone_number as rider_phone,
+           s.business_name, s.business_type, s.store_address, s.store_phone as seller_phone
+    FROM users u
+    JOIN roles r ON u.role_id = r.id
+    LEFT JOIN riders rd ON u.id = rd.user_id
+    LEFT JOIN sellers s ON u.id = s.user_id
+    WHERE u.registration_status = 'pending'
+    ORDER BY u.created_at DESC
+  `;
+  db.query(query, (err, rows) => {
+    if (err) return res.status(500).json({ message: "DB Error", error: err.message });
+    res.json(rows);
+  });
+});
+
+// 2. Update user status (Approve, Reject, Ban, Reactivate)
+app.put("/api/admin/users/:id/status", (req, res) => {
+  const userId = req.params.id;
+  const { status, notify } = req.body; // 'notify' check frontend se aayega
+
+  // Pehle user ki email aur naam database se nikalenge
+  db.query("SELECT email, full_name FROM users WHERE id = ?", [userId], (err, rows) => {
+    if (err) return res.status(500).json({ message: "DB Error", error: err.message });
+    if (rows.length === 0) return res.status(404).json({ message: "User not found" });
+
+    const user = rows[0];
+
+    // Status ko update karein
+    db.query(
+      "UPDATE users SET registration_status = ? WHERE id = ?",
+      [status, userId],
+      async (err) => {
+        if (err) return res.status(500).json({ message: "DB Error", error: err.message });
+        
+        // Event log karein
+        db.query("INSERT INTO registration_events (user_id, event_type) VALUES (?, ?)", [userId, status]);
+        
+        // AGAR NOTIFY CHECKBOX TICK HAI, TOU EMAIL SEND KAREIN
+        if (notify && typeof transporter !== "undefined") {
+          let subject = "";
+          let text = "";
+
+          if (status === 'approved') {
+            subject = "StoreHub - Account Approved! 🎉";
+            text = `Dear ${user.full_name},\n\nCongratulations! Your StoreHub partner account has been approved. You can now log in to your dashboard and start working.\n\nBest Regards,\nStoreHub Team`;
+          } else if (status === 'rejected') {
+            subject = "StoreHub - Application Update";
+            text = `Dear ${user.full_name},\n\nWe regret to inform you that your StoreHub partner application has been rejected after review. If you have any questions, please contact our support team.\n\nBest Regards,\nStoreHub Team`;
+          } else if (status === 'blocked') {
+            subject = "StoreHub - Account Suspended 🚨";
+            text = `Dear ${user.full_name},\n\nYour StoreHub account has been suspended due to policy violations. Please contact support for more information.\n\nBest Regards,\nStoreHub Team`;
+          }
+
+          if (subject && text) {
+            try {
+              await transporter.sendMail({
+                from: process.env.EMAIL_USER,
+                to: user.email,
+                subject: subject,
+                text: text
+              });
+              console.log(`[SUCCESS] Email sent to ${user.email} for status: ${status}`);
+            } catch (mailErr) {
+              console.error("[ERROR] Failed to send status email:", mailErr.message);
+            }
+          }
+        }
+
+        res.json({ message: `Account has been ${status}.` });
+      }
+    );
+  });
+});
+
+// ================= ADMIN: USER MANAGEMENT =================
+
+// 1. Get all users (Riders, Sellers, Admins) with their details
+app.get("/api/admin/users", (req, res) => {
+  const query = `
+    SELECT u.id, u.email, u.full_name as name, u.registration_status as status, 
+           DATE_FORMAT(u.created_at, '%Y-%m-%d') as joined, 
+           u.cnic_number, u.city, r.role_name as role,
+           rd.vehicle_type, rd.license_number, rd.phone_number as rider_phone,
+           s.business_name, s.business_type, s.store_address, s.store_phone as seller_phone
+    FROM users u
+    JOIN roles r ON u.role_id = r.id
+    LEFT JOIN riders rd ON u.id = rd.user_id
+    LEFT JOIN sellers s ON u.id = s.user_id
+    ORDER BY u.created_at DESC
+  `;
+  db.query(query, (err, rows) => {
+    if (err) return res.status(500).json({ message: "DB Error", error: err.message });
+    res.json(rows);
+  });
+});
+
+// 2. Update user status (Approve, Reject, Ban, Reactivate)
+app.put("/api/admin/users/:id/status", (req, res) => {
+  const userId = req.params.id;
+  const { status } = req.body; // 'approved', 'rejected', 'blocked', 'pending'
+
+  db.query(
+    "UPDATE users SET registration_status = ? WHERE id = ?",
+    [status, userId],
+    (err) => {
+      if (err) return res.status(500).json({ message: "DB Error", error: err.message });
+      
+      // Log the event in registration_events table
+      db.query("INSERT INTO registration_events (user_id, event_type) VALUES (?, ?)",[userId, status]);
+      
+      res.json({ message: `Account has been ${status}.` });
+    }
+  );
+});
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

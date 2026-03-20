@@ -193,6 +193,7 @@ const AdminDashboard = ({ onLogout }) => {
   );
 
   // --- MAIN SWITCH ---
+  // --- MAIN SWITCH ---
   const renderContent = () => {
     switch (activeTab) {
       case 'overview': return (
@@ -208,17 +209,17 @@ const AdminDashboard = ({ onLogout }) => {
         </div>
       );
       
-      // External Modules
+      // External Modules (Jo files aap ne banayi hain)
       case 'users': return <ManageUser />;
       case 'verify': return <Verification />;
       case 'products': return <ProductManagement />;
       
-      // Internal Modules
-      case 'orders': return <OrderOversight />;
-      case 'finance': return <FinancialManagement />
-      case 'reports': return <ReportsAnalytics />;
-      case 'system': return <SystemMonitoring />;
-      case 'config': return <PlatformConfig />;
+      // Internal Modules (Aap ke likhe hue render functions)
+      case 'orders': return renderOrders();
+      case 'finance': return renderFinancials();
+      case 'reports': return renderAnalytics();
+      case 'system': return renderSystem();
+      case 'config': return renderConfig();
       default: return <div>Select a tab</div>;
     }
   };

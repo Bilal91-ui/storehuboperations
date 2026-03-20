@@ -1,98 +1,135 @@
-// ManageUser.jsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import './manageuser.css';
 
 const ManageUser = () => {
-  // 1. Mock Database
-  const [users, setUsers] = useState([
-    { id: 101, name: 'John Doe', email: 'john@gmail.com', role: 'Customer', status: 'Active', joined: '2025-01-10', phone: '123-456-7890' },
-    { id: 102, name: 'Pizza Hut', email: 'contact@pizzahut.com', role: 'Vendor', status: 'Pending', joined: '2025-02-12', phone: '987-654-3210' },
-    { id: 103, name: 'Mike Ross', email: 'mike@rider.com', role: 'Rider', status: 'Banned', joined: '2025-01-05', phone: '555-000-1111' },
-    { id: 104, name: 'Sarah Connor', email: 'sarah@vendor.com', role: 'Vendor', status: 'Active', joined: '2025-02-20', phone: '444-555-6666' },
-  ]);
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   // UI State
   const [selectedUser, setSelectedUser] = useState(null);
-  const [filter, setFilter] = useState('All'); // All, Customer, Vendor, Rider
-  const [notification, setNotification] = useState('');
+  const [filter, setFilter] = useState('All'); // All, Vendor, Rider, Admin
+  const[notification, setNotification] = useState('');
   
-  // Edit State
-  const [editMode, setEditMode] = useState(false);
-  const [formData, setFormData] = useState({});
   const [notifyCheck, setNotifyCheck] = useState(true);
 
-  // --- HANDLERS ---
+  // --- FETCH USERS FROM BACKEND ---
+  useEffect(() => {
+    fetchUsers();
+  },[]);
 
-  // 4. Admin selects a user account
+  const fetchUsers = async () => {
+    try {
+      const res = await fetch("http://localhost:5000/api/admin/users");
+      const data = await res.json();
+      setUsers(data);
+      setLoading(false);
+    } catch (err) {
+      console.error("Error fetching users:", err);
+      setLoading(false);
+    }
+  };
+
+  // --- HANDLERS ---
   const handleSelectUser = (user) => {
     setSelectedUser(user);
-    setFormData(user);
-    setEditMode(false);
   };
 
   const handleCloseModal = () => {
     setSelectedUser(null);
-    setEditMode(false);
   };
 
-  const handleInputChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-  };
-
-  // 5. & 6. Perform Actions & Update Status
-  const handleAction = (actionType) => {
-    let newStatus = selectedUser.status;
+  // Handle Approve, Reject, Ban, Activate via Backend API
+  const handleAction = async (actionType) => {
+    let dbStatus = '';
     let logMsg = '';
 
     switch (actionType) {
       case 'Approve':
-        newStatus = 'Active';
-        logMsg = 'Registration Approved';
+      case 'Activate':
+        dbStatus = 'approved';
+        logMsg = 'Account activated successfully';
         break;
       case 'Reject':
-        newStatus = 'Rejected';
-        logMsg = 'Registration Rejected';
+        dbStatus = 'rejected';
+        logMsg = 'Application rejected';
         break;
       case 'Ban':
-        newStatus = 'Banned';
-        logMsg = 'Account Suspended/Banned';
-        break;
-      case 'Activate':
-        newStatus = 'Active';
-        logMsg = 'Account Reactivated';
-        break;
-      case 'Update':
-        logMsg = 'User Information Updated';
+        dbStatus = 'blocked';
+        logMsg = 'Account suspended/banned';
         break;
       default:
-        break;
+        return;
     }
 
-    // Update Database
-    const updatedUsers = users.map(u => 
-      u.id === selectedUser.id 
-      ? { ...formData, status: newStatus } 
-      : u
-    );
-    setUsers(updatedUsers);
+    try {
+      const res = await fetch(`http://localhost:5000/api/admin/users/${selectedUser.id}/status`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        // Yahan humne "notify: notifyCheck" add kar diya hai
+        body: JSON.stringify({ status: dbStatus, notify: notifyCheck }) 
+      });
 
-    // 7. Notify User Logic
-    if (notifyCheck) {
-      // In a real app, this triggers an email API
-      alert(`System Notification sent to ${formData.email}: "${logMsg}"`);
+      if (res.ok) {
+        // Update local state to reflect changes instantly
+        const updatedUsers = users.map(u => 
+          u.id === selectedUser.id ? { ...u, status: dbStatus } : u
+        );
+        setUsers(updatedUsers);
+
+        // Sirf UI par notification show karein
+        if (notifyCheck) {
+          setNotification(`✅ ${logMsg} and Email sent to ${selectedUser.email}.`);
+        } else {
+          setNotification(`✅ ${logMsg}. (No email sent)`);
+        }
+        
+        setTimeout(() => setNotification(''), 4000);
+        handleCloseModal();
+      } else {
+        alert("Failed to update status. Server error.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Network error.");
     }
-
-    setNotification(`${logMsg} successfully.`);
-    setTimeout(() => setNotification(''), 3000);
-    handleCloseModal();
   };
 
-  // Filter Logic
+  // --- Filter Logic Fixed ---
   const filteredUsers = filter === 'All' 
     ? users 
-    : users.filter(u => u.role === filter);
+    : users.filter(u => {
+        const dbRole = u.role ? u.role.toLowerCase() : '';
+        const filterName = filter.toLowerCase();
 
-  // --- RENDER HELPERS ---
+        // Map 'vendor' button to 'seller' database role
+        if (filterName === 'vendor' && dbRole === 'seller') return true;
+        // Direct match for rider and admin
+        if (filterName === dbRole) return true;
+
+        return false;
+    });
+
+  // Helper mapping functions
+  const getDisplayStatus = (dbStatus) => {
+    switch(dbStatus) {
+      case 'approved': return 'Active';
+      case 'pending': return 'Pending';
+      case 'blocked': return 'Banned';
+      case 'rejected': return 'Rejected';
+      default: return dbStatus;
+    }
+  };
+
+  const getDisplayRole = (dbRole) => {
+    if (!dbRole) return 'Unknown';
+    return dbRole.toLowerCase() === 'seller' ? 'Vendor' : dbRole.toLowerCase() === 'rider' ? 'Rider' : 'Admin';
+  };
+
+  const getPhone = (user) => {
+    return user.role === 'rider' ? user.rider_phone : user.role === 'seller' ? user.seller_phone : 'N/A';
+  };
+
+  if (loading) return <div>Loading user data...</div>;
 
   return (
     <div className="user-mgmt-container">
@@ -101,11 +138,11 @@ const ManageUser = () => {
         <div style={{color:'#666'}}>Total Users: {users.length}</div>
       </div>
 
-      {notification && <div style={{padding:'10px', background:'#dcfce7', color:'#166534', borderRadius:'6px', marginBottom:'15px'}}>✅ {notification}</div>}
+      {notification && <div style={{padding:'10px', background:'#dcfce7', color:'#166534', borderRadius:'6px', marginBottom:'15px'}}>{notification}</div>}
 
       {/* Filters */}
       <div className="filter-tabs">
-        {['All', 'Customer', 'Vendor', 'Rider'].map(f => (
+        {['All', 'Vendor', 'Rider', 'Admin'].map(f => (
           <button 
             key={f} 
             className={`filter-btn ${filter === f ? 'active' : ''}`}
@@ -116,12 +153,13 @@ const ManageUser = () => {
         ))}
       </div>
 
-      {/* 3. Display User Accounts */}
+      {/* Users Table */}
       <table className="user-table">
         <thead>
           <tr>
             <th>Name / Email</th>
             <th>Role</th>
+            <th>City</th>
             <th>Joined</th>
             <th>Status</th>
             <th>Action</th>
@@ -134,97 +172,90 @@ const ManageUser = () => {
                 <div style={{fontWeight:'bold'}}>{user.name}</div>
                 <div style={{fontSize:'0.8rem', color:'#666'}}>{user.email}</div>
               </td>
-              <td><span className="role-badge">{user.role}</span></td>
+              <td><span className="role-badge">{getDisplayRole(user.role)}</span></td>
+              <td>{user.city || 'N/A'}</td>
               <td>{user.joined}</td>
               <td>
-                <span className={`status-badge status-${user.status.toLowerCase()}`}>
-                  {user.status}
+                <span className={`status-badge status-${getDisplayStatus(user.status).toLowerCase()}`}>
+                  {getDisplayStatus(user.status)}
                 </span>
               </td>
               <td>
-                <button className="btn-secondary" style={{padding:'5px 10px', fontSize:'0.8rem', borderRadius:'4px', border:'none', cursor:'pointer'}}>Manage</button>
+                <button className="btn-secondary" style={{padding:'5px 10px', fontSize:'0.8rem', borderRadius:'4px', border:'none', cursor:'pointer', background: '#e2e8f0'}}>
+                  Review
+                </button>
               </td>
             </tr>
           ))}
+          {filteredUsers.length === 0 && (
+            <tr><td colSpan="6" style={{textAlign:'center', padding:'20px'}}>No records found for this category.</td></tr>
+          )}
         </tbody>
       </table>
 
       {/* Modal for User Details & Actions */}
       {selectedUser && (
         <div className="modal-overlay">
-          <div className="modal-content">
+          <div className="modal-content" style={{maxWidth: '600px', maxHeight: '85vh', overflowY: 'auto'}}>
             <div className="modal-header">
-              <h3>{editMode ? 'Edit User' : 'User Details'}</h3>
-              <button onClick={handleCloseModal} style={{background:'none', border:'none', fontSize:'1.2rem', cursor:'pointer'}}>&times;</button>
+              <h3>Partner Details Review</h3>
+              <button onClick={handleCloseModal} style={{background:'none', border:'none', fontSize:'1.5rem', cursor:'pointer'}}>&times;</button>
             </div>
 
-            {/* User Details Form */}
-            <div className="form-field">
-              <label>Full Name</label>
-              <input type="text" name="name" value={formData.name} onChange={handleInputChange} disabled={!editMode} />
-            </div>
-            <div className="form-field">
-              <label>Email Address</label>
-              <input type="email" name="email" value={formData.email} onChange={handleInputChange} disabled={!editMode} />
-            </div>
-            <div className="form-field">
-              <label>Phone Number</label>
-              <input type="text" name="phone" value={formData.phone} onChange={handleInputChange} disabled={!editMode} />
-            </div>
-            <div className="form-field">
-              <label>Role</label>
-              <select name="role" value={formData.role} onChange={handleInputChange} disabled={!editMode}>
-                <option value="Customer">Customer</option>
-                <option value="Vendor">Vendor</option>
-                <option value="Rider">Rider</option>
-              </select>
+            {/* General Info */}
+            <div style={{marginBottom: '20px', padding: '15px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0'}}>
+              <h4 style={{marginBottom: '10px', color: '#4f46e5', borderBottom: '1px solid #e2e8f0', paddingBottom: '5px'}}>Personal Details</h4>
+              <p><strong>Full Name:</strong> {selectedUser.name}</p>
+              <p><strong>Email:</strong> {selectedUser.email}</p>
+              <p><strong>Phone:</strong> {getPhone(selectedUser)}</p>
+              <p><strong>CNIC Number:</strong> {selectedUser.cnic_number || 'N/A'}</p>
+              <p><strong>City:</strong> {selectedUser.city || 'N/A'}</p>
             </div>
 
-            {/* Action Logs Simulation */}
-            {!editMode && (
-               <div style={{marginBottom:'15px'}}>
-                  <label style={{fontSize:'0.85rem', fontWeight:'bold'}}>System Logs:</label>
-                  <div className="log-entry">User joined on {selectedUser.joined}</div>
-                  <div className="log-entry">Current Status: {selectedUser.status}</div>
-               </div>
+            {/* Rider Specific Details */}
+            {selectedUser.role === 'rider' && (
+              <div style={{marginBottom: '20px', padding: '15px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0'}}>
+                <h4 style={{marginBottom: '10px', color: '#4f46e5', borderBottom: '1px solid #e2e8f0', paddingBottom: '5px'}}>Vehicle Information</h4>
+                <p><strong>Vehicle Type:</strong> {selectedUser.vehicle_type}</p>
+                <p><strong>License Number:</strong> {selectedUser.license_number || 'N/A (Bicycle)'}</p>
+              </div>
             )}
 
-            {/* Notify Checkbox */}
+            {/* Seller Specific Details */}
+            {selectedUser.role === 'seller' && (
+              <div style={{marginBottom: '20px', padding: '15px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0'}}>
+                <h4 style={{marginBottom: '10px', color: '#4f46e5', borderBottom: '1px solid #e2e8f0', paddingBottom: '5px'}}>Business Details</h4>
+                <p><strong>Business Name:</strong> {selectedUser.business_name}</p>
+                <p><strong>Business Type:</strong> {selectedUser.business_type}</p>
+                <p><strong>Store Address:</strong> {selectedUser.store_address}</p>
+              </div>
+            )}
+
             <div style={{display:'flex', alignItems:'center', gap:'10px', marginBottom:'15px'}}>
                <input type="checkbox" checked={notifyCheck} onChange={e => setNotifyCheck(e.target.checked)} id="notify"/>
-               <label htmlFor="notify" style={{fontSize:'0.9rem', cursor:'pointer'}}>Notify user about changes via email</label>
+               <label htmlFor="notify" style={{fontSize:'0.9rem', cursor:'pointer'}}>Notify user about status change via email</label>
             </div>
 
-            {/* 5. Admin Actions */}
-            <div className="action-bar">
-              {editMode ? (
+            {/* Action Bar based on DB Status */}
+            <div className="action-bar" style={{display: 'flex', gap: '10px', borderTop: '1px solid #e2e8f0', paddingTop: '15px'}}>
+              {/* Logic for Pending Users */}
+              {selectedUser.status === 'pending' && (
                 <>
-                  <button className="btn btn-primary" onClick={() => handleAction('Update')}>Save Changes</button>
-                  <button className="btn btn-secondary" onClick={() => setEditMode(false)}>Cancel</button>
+                  <button className="btn btn-success" style={{background: '#10b981', color: 'white'}} onClick={() => handleAction('Approve')}>✅ Approve Partner</button>
+                  <button className="btn btn-danger" style={{background: '#ef4444', color: 'white'}} onClick={() => handleAction('Reject')}>❌ Reject Partner</button>
                 </>
-              ) : (
+              )}
+
+              {/* Logic for Active Users */}
+              {selectedUser.status === 'approved' && (
                 <>
-                  {/* Logic for Pending Users */}
-                  {selectedUser.status === 'Pending' && (
-                    <>
-                      <button className="btn btn-success" onClick={() => handleAction('Approve')}>Approve</button>
-                      <button className="btn btn-danger" onClick={() => handleAction('Reject')}>Reject</button>
-                    </>
-                  )}
-
-                  {/* Logic for Active Users */}
-                  {selectedUser.status === 'Active' && (
-                    <>
-                      <button className="btn btn-secondary" onClick={() => setEditMode(true)}>Edit Info</button>
-                      <button className="btn btn-danger" onClick={() => handleAction('Ban')}>Suspend / Ban</button>
-                    </>
-                  )}
-
-                  {/* Logic for Banned Users */}
-                  {(selectedUser.status === 'Banned' || selectedUser.status === 'Rejected') && (
-                     <button className="btn btn-success" onClick={() => handleAction('Activate')}>Reactivate Account</button>
-                  )}
+                  <button className="btn btn-danger" style={{background: '#ef4444', color: 'white'}} onClick={() => handleAction('Ban')}>⛔ Suspend / Ban Account</button>
                 </>
+              )}
+
+              {/* Logic for Banned/Rejected Users */}
+              {(selectedUser.status === 'blocked' || selectedUser.status === 'rejected') && (
+                  <button className="btn btn-success" style={{background: '#3b82f6', color: 'white'}} onClick={() => handleAction('Activate')}>🔄 Reactivate Account</button>
               )}
             </div>
           </div>

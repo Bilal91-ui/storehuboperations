@@ -71,6 +71,7 @@ function Home() {
     event.preventDefault()
 
     // --- LOGIN FLOW ---
+    // --- LOGIN FLOW ---
     if (isLogin) {
       const email = event.target.querySelector("[name='email']")?.value?.trim()
       const password = event.target.querySelector("[name='password']")?.value?.trim()
@@ -86,8 +87,13 @@ function Home() {
         const data = await res.json()
         if (!res.ok) return alert(data.message || "Login failed.")
         
+        // 🔒 STRICT SECURITY CHECK:
+        if (data.role !== selectedRole) {
+          return alert(`Security Alert 🚨\nYou are registered as a '${data.role.toUpperCase()}', but tried to login as '${selectedRole.toUpperCase()}'. Please select the correct role from the main menu.`);
+        }
+
         setIsLoggedIn(true)
-        setUserRole(selectedRole)
+        setUserRole(data.role) // Database verified role set kar rahe hain
         return
       } catch (err) {
         console.error(err)
