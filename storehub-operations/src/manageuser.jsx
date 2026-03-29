@@ -1,3 +1,4 @@
+// ManageUser.jsx
 import React, { useState, useEffect } from 'react';
 import './manageuser.css';
 
@@ -6,22 +7,24 @@ const ManageUser = () => {
   const [loading, setLoading] = useState(true);
 
   // UI State
-  const [selectedUser, setSelectedUser] = useState(null);
-  const [filter, setFilter] = useState('All'); // All, Vendor, Rider, Admin
-  const[notification, setNotification] = useState('');
+  const[selectedUser, setSelectedUser] = useState(null);
+  const [filter, setFilter] = useState('All'); 
+  const [notification, setNotification] = useState('');
   
-  const [notifyCheck, setNotifyCheck] = useState(true);
+  const[notifyCheck, setNotifyCheck] = useState(true);
 
-  // --- FETCH USERS FROM BACKEND ---
+  // --- FETCH MANAGED USERS FROM BACKEND ---
   useEffect(() => {
-    fetchUsers();
+    fetchManagedUsers();
   },[]);
 
-  const fetchUsers = async () => {
+  const fetchManagedUsers = async () => {
     try {
       const res = await fetch("http://localhost:5000/api/admin/users");
       const data = await res.json();
-      setUsers(data);
+      // Only show users that are NOT pending (Approved, Blocked, Rejected)
+      const managedUsers = data.filter(u => u.status !== 'pending');
+      setUsers(managedUsers);
       setLoading(false);
     } catch (err) {
       console.error("Error fetching users:", err);
@@ -29,7 +32,6 @@ const ManageUser = () => {
     }
   };
 
-  // --- HANDLERS ---
   const handleSelectUser = (user) => {
     setSelectedUser(user);
   };
@@ -38,51 +40,25 @@ const ManageUser = () => {
     setSelectedUser(null);
   };
 
-  // Handle Approve, Reject, Ban, Activate via Backend API
+  // Handle Ban and Reactivate
   const handleAction = async (actionType) => {
-    let dbStatus = '';
-    let logMsg = '';
-
-    switch (actionType) {
-      case 'Approve':
-      case 'Activate':
-        dbStatus = 'approved';
-        logMsg = 'Account activated successfully';
-        break;
-      case 'Reject':
-        dbStatus = 'rejected';
-        logMsg = 'Application rejected';
-        break;
-      case 'Ban':
-        dbStatus = 'blocked';
-        logMsg = 'Account suspended/banned';
-        break;
-      default:
-        return;
-    }
+    let dbStatus = actionType === 'Ban' ? 'blocked' : 'approved';
+    let logMsg = actionType === 'Ban' ? 'Account suspended/banned' : 'Account reactivated successfully';
 
     try {
       const res = await fetch(`http://localhost:5000/api/admin/users/${selectedUser.id}/status`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        // Yahan humne "notify: notifyCheck" add kar diya hai
-        body: JSON.stringify({ status: dbStatus, notify: notifyCheck }) 
+        body: JSON.stringify({ status: dbStatus, notify: notifyCheck })
       });
 
       if (res.ok) {
-        // Update local state to reflect changes instantly
         const updatedUsers = users.map(u => 
           u.id === selectedUser.id ? { ...u, status: dbStatus } : u
         );
         setUsers(updatedUsers);
 
-        // Sirf UI par notification show karein
-        if (notifyCheck) {
-          setNotification(`✅ ${logMsg} and Email sent to ${selectedUser.email}.`);
-        } else {
-          setNotification(`✅ ${logMsg}. (No email sent)`);
-        }
-        
+        setNotification(`✅ ${logMsg}. ${notifyCheck ? 'Email sent.' : ''}`);
         setTimeout(() => setNotification(''), 4000);
         handleCloseModal();
       } else {
@@ -94,18 +70,14 @@ const ManageUser = () => {
     }
   };
 
-  // --- Filter Logic Fixed ---
+  // Filter Logic
   const filteredUsers = filter === 'All' 
     ? users 
     : users.filter(u => {
         const dbRole = u.role ? u.role.toLowerCase() : '';
         const filterName = filter.toLowerCase();
-
-        // Map 'vendor' button to 'seller' database role
         if (filterName === 'vendor' && dbRole === 'seller') return true;
-        // Direct match for rider and admin
         if (filterName === dbRole) return true;
-
         return false;
     });
 
@@ -113,7 +85,6 @@ const ManageUser = () => {
   const getDisplayStatus = (dbStatus) => {
     switch(dbStatus) {
       case 'approved': return 'Active';
-      case 'pending': return 'Pending';
       case 'blocked': return 'Banned';
       case 'rejected': return 'Rejected';
       default: return dbStatus;
@@ -135,7 +106,7 @@ const ManageUser = () => {
     <div className="user-mgmt-container">
       <div className="mgmt-header">
         <h2>User Management</h2>
-        <div style={{color:'#666'}}>Total Users: {users.length}</div>
+        <div style={{color:'#666'}}>Manage active accounts and restrictions</div>
       </div>
 
       {notification && <div style={{padding:'10px', background:'#dcfce7', color:'#166534', borderRadius:'6px', marginBottom:'15px'}}>{notification}</div>}
@@ -159,8 +130,7 @@ const ManageUser = () => {
           <tr>
             <th>Name / Email</th>
             <th>Role</th>
-            <th>City</th>
-            <th>Joined</th>
+            <th>Joined Date</th>
             <th>Status</th>
             <th>Action</th>
           </tr>
@@ -173,7 +143,6 @@ const ManageUser = () => {
                 <div style={{fontSize:'0.8rem', color:'#666'}}>{user.email}</div>
               </td>
               <td><span className="role-badge">{getDisplayRole(user.role)}</span></td>
-              <td>{user.city || 'N/A'}</td>
               <td>{user.joined}</td>
               <td>
                 <span className={`status-badge status-${getDisplayStatus(user.status).toLowerCase()}`}>
@@ -182,13 +151,13 @@ const ManageUser = () => {
               </td>
               <td>
                 <button className="btn-secondary" style={{padding:'5px 10px', fontSize:'0.8rem', borderRadius:'4px', border:'none', cursor:'pointer', background: '#e2e8f0'}}>
-                  Review
+                  Manage
                 </button>
               </td>
             </tr>
           ))}
           {filteredUsers.length === 0 && (
-            <tr><td colSpan="6" style={{textAlign:'center', padding:'20px'}}>No records found for this category.</td></tr>
+            <tr><td colSpan="5" style={{textAlign:'center', padding:'20px'}}>No records found for this category.</td></tr>
           )}
         </tbody>
       </table>
@@ -196,40 +165,18 @@ const ManageUser = () => {
       {/* Modal for User Details & Actions */}
       {selectedUser && (
         <div className="modal-overlay">
-          <div className="modal-content" style={{maxWidth: '600px', maxHeight: '85vh', overflowY: 'auto'}}>
+          <div className="modal-content" style={{maxWidth: '500px'}}>
             <div className="modal-header">
-              <h3>Partner Details Review</h3>
+              <h3>Manage User Account</h3>
               <button onClick={handleCloseModal} style={{background:'none', border:'none', fontSize:'1.5rem', cursor:'pointer'}}>&times;</button>
             </div>
 
-            {/* General Info */}
             <div style={{marginBottom: '20px', padding: '15px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0'}}>
-              <h4 style={{marginBottom: '10px', color: '#4f46e5', borderBottom: '1px solid #e2e8f0', paddingBottom: '5px'}}>Personal Details</h4>
-              <p><strong>Full Name:</strong> {selectedUser.name}</p>
+              <p><strong>Name:</strong> {selectedUser.name}</p>
               <p><strong>Email:</strong> {selectedUser.email}</p>
               <p><strong>Phone:</strong> {getPhone(selectedUser)}</p>
-              <p><strong>CNIC Number:</strong> {selectedUser.cnic_number || 'N/A'}</p>
-              <p><strong>City:</strong> {selectedUser.city || 'N/A'}</p>
+              <p><strong>Current Status:</strong> <span style={{fontWeight: 'bold', color: selectedUser.status === 'approved' ? '#10b981' : '#ef4444'}}>{getDisplayStatus(selectedUser.status)}</span></p>
             </div>
-
-            {/* Rider Specific Details */}
-            {selectedUser.role === 'rider' && (
-              <div style={{marginBottom: '20px', padding: '15px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0'}}>
-                <h4 style={{marginBottom: '10px', color: '#4f46e5', borderBottom: '1px solid #e2e8f0', paddingBottom: '5px'}}>Vehicle Information</h4>
-                <p><strong>Vehicle Type:</strong> {selectedUser.vehicle_type}</p>
-                <p><strong>License Number:</strong> {selectedUser.license_number || 'N/A (Bicycle)'}</p>
-              </div>
-            )}
-
-            {/* Seller Specific Details */}
-            {selectedUser.role === 'seller' && (
-              <div style={{marginBottom: '20px', padding: '15px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0'}}>
-                <h4 style={{marginBottom: '10px', color: '#4f46e5', borderBottom: '1px solid #e2e8f0', paddingBottom: '5px'}}>Business Details</h4>
-                <p><strong>Business Name:</strong> {selectedUser.business_name}</p>
-                <p><strong>Business Type:</strong> {selectedUser.business_type}</p>
-                <p><strong>Store Address:</strong> {selectedUser.store_address}</p>
-              </div>
-            )}
 
             <div style={{display:'flex', alignItems:'center', gap:'10px', marginBottom:'15px'}}>
                <input type="checkbox" checked={notifyCheck} onChange={e => setNotifyCheck(e.target.checked)} id="notify"/>
@@ -238,25 +185,19 @@ const ManageUser = () => {
 
             {/* Action Bar based on DB Status */}
             <div className="action-bar" style={{display: 'flex', gap: '10px', borderTop: '1px solid #e2e8f0', paddingTop: '15px'}}>
-              {/* Logic for Pending Users */}
-              {selectedUser.status === 'pending' && (
-                <>
-                  <button className="btn btn-success" style={{background: '#10b981', color: 'white'}} onClick={() => handleAction('Approve')}>✅ Approve Partner</button>
-                  <button className="btn btn-danger" style={{background: '#ef4444', color: 'white'}} onClick={() => handleAction('Reject')}>❌ Reject Partner</button>
-                </>
-              )}
-
-              {/* Logic for Active Users */}
+              
               {selectedUser.status === 'approved' && (
-                <>
-                  <button className="btn btn-danger" style={{background: '#ef4444', color: 'white'}} onClick={() => handleAction('Ban')}>⛔ Suspend / Ban Account</button>
-                </>
+                <button style={{width: '100%', padding: '12px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold'}} onClick={() => handleAction('Ban')}>
+                  ⛔ Suspend / Ban Account
+                </button>
               )}
 
-              {/* Logic for Banned/Rejected Users */}
               {(selectedUser.status === 'blocked' || selectedUser.status === 'rejected') && (
-                  <button className="btn btn-success" style={{background: '#3b82f6', color: 'white'}} onClick={() => handleAction('Activate')}>🔄 Reactivate Account</button>
+                  <button style={{width: '100%', padding: '12px', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold'}} onClick={() => handleAction('Reactivate')}>
+                    🔄 Reactivate Account
+                  </button>
               )}
+              
             </div>
           </div>
         </div>

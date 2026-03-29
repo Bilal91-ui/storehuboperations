@@ -15,17 +15,8 @@ import PlatformConfig from './PlatformConfig';
 const AdminDashboard = ({ onLogout }) => {
   const [activeTab, setActiveTab] = useState('overview');
 
-  // --- MOCK DATA FOR INTERNAL SECTIONS ---
-  
-  // 4. Order Data
-  const orders = [
-    { id: '#ORD-9921', vendor: 'Pizza Hut', customer: 'Alice Doe', amount: '$45.00', status: 'Processing' },
-    { id: '#ORD-9922', vendor: 'Burger King', customer: 'Bob Smith', amount: '$12.50', status: 'Delivered' },
-    { id: '#ORD-9923', vendor: 'Tech Store', customer: 'Charlie', amount: '$120.00', status: 'Cancelled' },
-  ];
-
-  // 7. System Stats
-  const [systemStats, setSystemStats] = useState({ cpu: 45, memory: 60, server: 'Online', latency: 24 });
+  // 7. System Stats (Mock Data for Dashboard)
+  const[systemStats, setSystemStats] = useState({ cpu: 45, memory: 60, server: 'Online', latency: 24 });
 
   // --- HANDLERS ---
 
@@ -40,39 +31,18 @@ const AdminDashboard = ({ onLogout }) => {
       });
     }, 3000);
     return () => clearInterval(interval);
-  }, []);
+  },[]);
 
   // --- RENDER FUNCTIONS FOR INTERNAL MODULES ---
 
-  // 4. Order Oversight
-  const renderOrders = () => (
-    <div>
+  // Order Oversight Summary (SIRF BOXES, NO TABLE)
+  const renderOrderStats = () => (
+    <div style={{marginTop: '20px'}}>
       <h3 className="section-title">Order Oversight</h3>
       <div className="stats-grid">
          <div className="stat-card"><div className="stat-title">Today's Orders</div><div className="stat-value">142</div></div>
          <div className="stat-card"><div className="stat-title">Active Deliveries</div><div className="stat-value" style={{color:'#3b82f6'}}>35</div></div>
          <div className="stat-card"><div className="stat-title">Cancelled</div><div className="stat-value" style={{color:'#ef4444'}}>4</div></div>
-      </div>
-      <div className="admin-table-container">
-        <table className="admin-table">
-          <thead><tr><th>Order ID</th><th>Vendor</th><th>Customer</th><th>Amount</th><th>Status</th><th>Action</th></tr></thead>
-          <tbody>
-            {orders.map(order => (
-              <tr key={order.id}>
-                <td><strong>{order.id}</strong></td>
-                <td>{order.vendor}</td>
-                <td>{order.customer}</td>
-                <td>{order.amount}</td>
-                <td>
-                  <span className={`badge ${order.status === 'Delivered' ? 'badge-success' : order.status === 'Processing' ? 'badge-warning' : 'badge-danger'}`}>
-                    {order.status}
-                  </span>
-                </td>
-                <td><button className="btn-sm btn-outline">View Details</button></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       </div>
     </div>
   );
@@ -193,7 +163,6 @@ const AdminDashboard = ({ onLogout }) => {
   );
 
   // --- MAIN SWITCH ---
-  // --- MAIN SWITCH ---
   const renderContent = () => {
     switch (activeTab) {
       case 'overview': return (
@@ -205,17 +174,19 @@ const AdminDashboard = ({ onLogout }) => {
              <div className="stat-card"><div className="stat-title">Pending Verifications</div><div className="stat-value" style={{color:'#f59e0b'}}>3</div></div>
              <div className="stat-card"><div className="stat-title">System Health</div><div className="stat-value" style={{color:'#3b82f6'}}>Good</div></div>
            </div>
-           {renderOrders()}
+           
+           {/* Sirf Order Stats wale boxes show honge yahan */}
+           {renderOrderStats()}
         </div>
       );
       
-      // External Modules (Jo files aap ne banayi hain)
+      // External Modules (Ab 'orders' sahi tarike se external file ko call karega)
       case 'users': return <ManageUser />;
       case 'verify': return <Verification />;
       case 'products': return <ProductManagement />;
+      case 'orders': return <OrderOversight />;   // <-- FIXED HERE
       
-      // Internal Modules (Aap ke likhe hue render functions)
-      case 'orders': return renderOrders();
+      // Internal Modules
       case 'finance': return renderFinancials();
       case 'reports': return renderAnalytics();
       case 'system': return renderSystem();
