@@ -1,5 +1,9 @@
 // server.js
 const express = require("express");
+//new code
+const http = require("http"); // Add this
+const { Server } = require("socket.io"); // Add this
+
 const cors = require("cors");
 require("dotenv").config();
 const db = require("./db"); // your mysql connection module
@@ -12,6 +16,17 @@ console.log("Loaded NODE_ENV:", process.env.NODE_ENV);
 console.log("All env vars starting with NODE:", Object.keys(process.env).filter(key => key.startsWith('NODE')));
 
 const app = express();
+//new code
+const server = http.createServer(app); // Add this
+const io = new Server(server, {
+  cors: { origin: "*" } // Allows frontend to connect
+});
+
+// Socket.io Connection Logic
+io.on("connection", (socket) => {
+  console.log("Rider/User connected:", socket.id);
+  socket.on("disconnect", () => console.log("User disconnected"));
+});
 app.use(cors());
 app.use(express.json());
 
@@ -504,6 +519,21 @@ app.post("/api/orders", (req, res) => {
           const finalizeOrder = () => {
             db.commit((err) => {
               if (err) return db.rollback(() => res.status(500).json({ message: "Database error" }));
+              //new code
+              const newOrderTask = {
+                id: orderId,
+                order_number: order_number,
+                earnings: `$${(total_amount * 0.1).toFixed(2)}`, // Example: Rider gets 10%
+                customer: customer_name,
+                dropoffAddr: shipping_address,
+                restaurant: "StoreHub Shop", // You can customize this
+                pickupAddr: "Main Warehouse",
+                items: cart_items,
+                status: 'confirmed'
+              };
+              io.emit("new_order_available", newOrderTask); 
+              // ------------------------------------
+
               res.json({
                 message: "Order created successfully",
                 order_id: orderId,
@@ -616,6 +646,58 @@ app.get("/api/orders/track/:phone", (req, res) => {
   db.query(sql, [phone], (err, rows) => {
     if (err) return res.status(500).json({ message: "Database error" });
     res.json(rows);
+  });
+});
+
+// ================= RIDER MODULE APIS =================
+
+// 1. Get all available tasks (Confirmed orders with no rider)
+app.get("/api/rider/available-tasks", (req, res) => {
+  const query = `
+    SELECT id, order_number, total_amount, customer_name, shipping_address, created_at 
+    FROM orders 
+    WHERE order_status = 'confirmed' AND rider_id IS NULL
+    ORDER BY created_at DESC
+  `;
+  db.query(query, (err, rows) => {
+    if (err) return res.status(500).json({ message: "DB Error", error: err.message });
+    
+    // Format data to match your RiderDashboard.jsx needs
+    const tasks = rows.map(order => ({
+      id: order.id,
+      order_number: order.order_number,
+      earnings: `$${(order.total_amount * 0.1).toFixed(2)}`, 
+      customer: order.customer_name,
+      dropoffAddr: order.shipping_address,
+      restaurant: "StoreHub Store",
+      pickupAddr: "Central Store",
+      distance: "2.5 km", // Static for now
+      items: [] 
+    }));
+    res.json(tasks);
+  });
+});
+
+// 2. Accept a task
+app.post("/api/rider/accept-task", (req, res) => {
+  const { order_id, rider_id } = req.body;
+
+  // First check if already taken
+  db.query("SELECT rider_id FROM orders WHERE id = ?", [order_id], (err, rows) => {
+    if (err) return res.status(500).json({ message: "DB error" });
+    if (rows.length > 0 && rows[0].rider_id !== null) {
+      return res.status(400).json({ message: "Order already taken by another rider." });
+    }
+
+    const query = "UPDATE orders SET rider_id = ?, order_status = 'accepted' WHERE id = ?";
+    db.query(query, [rider_id, order_id], (err) => {
+      if (err) return res.status(500).json({ message: "Failed to accept task" });
+
+      // Notify other riders to remove this task from their list
+      io.emit("task_taken", order_id);
+      
+      res.json({ message: "Task accepted successfully!" });
+    });
   });
 });
 
@@ -778,4 +860,4 @@ app.get("/api/system-stats", async (req, res) => {
   }
 });
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));

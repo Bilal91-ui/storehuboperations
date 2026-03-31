@@ -54,3 +54,14 @@ export const productService = {
         }
     }
 };
+//new code
+export const riderService = {
+    getAvailableTasks: async () => {
+        const response = await api.get('/rider/available-tasks');
+        return response.data;
+    },
+    acceptTask: async (orderId, riderId) => {
+        const response = await api.post('/rider/accept-task', { order_id: orderId, rider_id: riderId });
+        return response.data;
+    }
+};

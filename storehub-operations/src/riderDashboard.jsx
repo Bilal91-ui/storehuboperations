@@ -1,6 +1,11 @@
 // RiderDashboard.jsx
 import React, { useState, useEffect } from 'react';
 import './riderDashboard.css';
+//new code
+import axios from 'axios';
+import { io } from 'socket.io-client';
+
+const socket = io('http://localhost:5000'); // Your backend URL
 
 const RiderDashboard = ({ onLogout }) => {
   // --- GLOBAL STATE ---
@@ -11,6 +16,37 @@ const RiderDashboard = ({ onLogout }) => {
 
   // --- DATA: NEW TASKS ---
   const [tasks, setTasks] = useState([]);
+  //new code
+const riderId = localStorage.getItem("user_id"); // Get logged in rider ID
+
+  // --- FETCH INITIAL TASKS & LISTEN FOR REAL-TIME ---
+  useEffect(() => {
+    const fetchTasks = async () => {
+      try {
+        const response = await axios.get('http://localhost:5000/api/rider/available-tasks');
+        setTasks(response.data);
+      } catch (err) {
+        console.error("Error fetching tasks:", err);
+      }
+    };
+
+    fetchTasks();
+
+    // Socket: Listen for new orders placed by customers
+    socket.on("new_order_available", (newOrder) => {
+      setTasks((prev) => [newOrder, ...prev]);
+    });
+
+    // Socket: Remove order if another rider accepts it
+    socket.on("task_taken", (orderId) => {
+      setTasks((prev) => prev.filter(t => t.id !== orderId));
+    });
+
+    return () => {
+      socket.off("new_order_available");
+      socket.off("task_taken");
+    };
+  }, []);
 
   // --- DATA: EARNINGS HISTORY (Req 5 & 6) ---
   const [earningsFilter, setEarningsFilter] = useState('weekly');
@@ -43,14 +79,26 @@ const RiderDashboard = ({ onLogout }) => {
   const handleViewDetails = (task) => setSelectedTask(task);
   const handleCloseModal = () => { setSelectedTask(null); setSelectedTxn(null); };
 
-  const handleAccept = (task) => {
-    setCurrentDelivery(task);
-    setDeliveryStatus('accepted');
-    setNavStatus('idle'); setProgress(0); setEnteredOtp('');
-    setTasks(tasks.filter(t => t.id !== task.id));
-    setSelectedTask(null);
-    setActiveTab('active');
-    alert("Delivery task accepted successfully.");
+  //new code
+  const handleAccept = async (task) => {
+    try {
+      // 1. Tell backend we accepted this task
+      await axios.post('http://localhost:5000/api/rider/accept-task', {
+        order_id: task.id,
+        rider_id: riderId
+      });
+
+      // 2. Update UI (your existing logic)
+      setCurrentDelivery(task);
+      setDeliveryStatus('accepted');
+      setNavStatus('idle'); setProgress(0); setEnteredOtp('');
+      setTasks(tasks.filter(t => t.id !== task.id));
+      setSelectedTask(null);
+      setActiveTab('active');
+      alert("Delivery task accepted successfully.");
+    } catch (error) {
+      alert(error.response?.data?.message || "Could not accept task.");
+    }
   };
 
   const handleReject = (taskId) => {
@@ -156,7 +204,7 @@ const RiderDashboard = ({ onLogout }) => {
         ) : (
           tasks.map(task => (
             <div key={task.id} className="task-card">
-              <div className="task-header-row"><span className="task-id">Order #{task.id}</span><span className="task-earnings">{task.earnings}</span></div>
+              <div className="task-header-row"><span className="task-id">Order #{task.ordernumber || task.id}</span><span className="task-earnings">{task.earnings}</span></div>
               <div className="route-details">
                 <div className="route-row"><span className="route-icon">🏪</span><div className="route-text"><strong>{task.restaurant}</strong><span>{task.distance} away</span></div></div>
                 <div className="route-row"><span className="route-icon">📍</span><div className="route-text"><strong>{task.dropoffAddr}</strong></div></div>
