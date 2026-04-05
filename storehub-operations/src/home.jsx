@@ -12,12 +12,31 @@ import RiderDashboard from "./riderDashboard"
 import AdminDashboard from "./AdminDashboard"
 
 function Home() {
+  const SESSION_STORAGE_KEY = "storehubOperationsSession"
+
   const [showRoleSelection, setShowRoleSelection] = useState(false)
   const [selectedRole, setSelectedRole] = useState(null)
-  const[isLogin, setIsLogin] = useState(false)
+  const [isLogin, setIsLogin] = useState(false)
 
-  const [isLoggedIn, setIsLoggedIn] = useState(false)
-  const [userRole, setUserRole] = useState("")
+  const [isLoggedIn, setIsLoggedIn] = useState(() => {
+    try {
+      const raw = window.localStorage.getItem(SESSION_STORAGE_KEY)
+      const saved = raw ? JSON.parse(raw) : null
+      return !!saved?.role
+    } catch {
+      return false
+    }
+  })
+
+  const [userRole, setUserRole] = useState(() => {
+    try {
+      const raw = window.localStorage.getItem(SESSION_STORAGE_KEY)
+      const saved = raw ? JSON.parse(raw) : null
+      return saved?.role || ""
+    } catch {
+      return ""
+    }
+  })
 
   const [signupStep, setSignupStep] = useState(1)
   const [registrationCompleted, setRegistrationCompleted] = useState(false)
@@ -91,6 +110,13 @@ function Home() {
         if (data.role !== selectedRole) {
           return alert(`Security Alert 🚨\nYou are registered as a '${data.role.toUpperCase()}', but tried to login as '${selectedRole.toUpperCase()}'. Please select the correct role from the main menu.`);
         }
+
+        const sessionData = {
+          role: data.role,
+          email,
+          userId: data.user_id || null
+        }
+        window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(sessionData))
 
         setIsLoggedIn(true)
         setUserRole(data.role) // Database verified role set kar rahe hain
@@ -179,6 +205,7 @@ function Home() {
   }
 
   const handleLogout = () => {
+    window.localStorage.removeItem(SESSION_STORAGE_KEY)
     setIsLoggedIn(false)
     setUserRole("")
     setSelectedRole(null)

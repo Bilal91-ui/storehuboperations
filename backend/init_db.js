@@ -93,6 +93,12 @@ async function init() {
     await ensureColumn('orders', 'otp_verified', 'BOOLEAN DEFAULT FALSE');
     await ensureColumn('orders', 'otp_sent_at', 'TIMESTAMP NULL');
 
+    await ensureColumn('products', 'basePrice', 'DECIMAL(10,2)');
+    await ensureColumn('products', 'discountPercent', 'INT DEFAULT 0');
+    await ensureColumn('products', 'salePrice', 'DECIMAL(10,2) DEFAULT 0');
+    await ensureColumn('products', 'promoStart', 'DATETIME NULL');
+    await ensureColumn('products', 'promoEnd', 'DATETIME NULL');
+
     // Keep legacy columns for older versions
     await ensureColumn('orders', 'address', 'TEXT');
     await ensureColumn('orders', 'total', 'DECIMAL(10,2)');

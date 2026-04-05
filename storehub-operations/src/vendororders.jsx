@@ -105,18 +105,21 @@ const VendorOrders = () => {
           </tr>
         </thead>
         <tbody>
-          {orders.map(order => (
-            <tr key={order.id}>
-              <td>#{order.id}</td>
-              <td>{order.date}</td>
-              <td>{order.customer}</td>
-              <td>${order.total.toFixed(2)}</td>
-              <td><span className={`badge badge-${order.status.toLowerCase()}`}>{order.status}</span></td>
-              <td>
-                <button className="action-btn" onClick={() => setSelectedOrder(order)}>View Details</button>
-              </td>
-            </tr>
-          ))}
+          {orders.map(order => {
+            const totalAmount = typeof order.total === 'number' ? order.total : parseFloat(order.total) || 0;
+            return (
+              <tr key={order.id}>
+                <td>#{order.id}</td>
+                <td>{order.date}</td>
+                <td>{order.customer}</td>
+                <td>${totalAmount.toFixed(2)}</td>
+                <td><span className={`badge badge-${order.status.toLowerCase()}`}>{order.status}</span></td>
+                <td>
+                  <button className="action-btn" onClick={() => setSelectedOrder(order)}>View Details</button>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
 
@@ -144,7 +147,7 @@ const VendorOrders = () => {
               </div>
               <div className="detail-group">
                 <label>Total Amount</label>
-                <p style={{ fontSize: '1.2rem', color: '#28a745', fontWeight: 'bold' }}>${selectedOrder.total.toFixed(2)}</p>
+                <p style={{ fontSize: '1.2rem', color: '#28a745', fontWeight: 'bold' }}>${(typeof selectedOrder.total === 'number' ? selectedOrder.total : parseFloat(selectedOrder.total) || 0).toFixed(2)}</p>
               </div>
             </div>
 
