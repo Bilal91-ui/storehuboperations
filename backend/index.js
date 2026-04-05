@@ -26,6 +26,39 @@ const transporter = nodemailer.createTransport({
   }
 });
 
+async function sendOrderStatusEmail(order, status) {
+  if (!order || !order.customer_email) return;
+
+  const statusMap = {
+    pending: 'Pending',
+    processing: 'Accepted and Processing',
+    shipped: 'Shipped',
+    completed: 'Completed',
+    cancelled: 'Cancelled'
+  };
+
+  const friendlyStatus = statusMap[status] || status;
+  const subject = `StoreHub Order ${order.order_number} ${friendlyStatus}`;
+  const text = `Dear ${order.customer_name},\n\nYour order ${order.order_number} has been updated to "${friendlyStatus}".\n\nOrder Summary:\n- Total: Rs ${order.total_amount}\n- Status: ${friendlyStatus}\n\nIf you have any questions, please reply to this email or contact support.\n\nBest regards,\nStoreHub Team`;
+
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    console.log(`[DEV] Email not configured. Would send to ${order.customer_email}: ${subject}`);
+    return;
+  }
+
+  try {
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: order.customer_email,
+      subject,
+      text
+    });
+    console.log(`[SUCCESS] Order status email sent to ${order.customer_email}`);
+  } catch (mailErr) {
+    console.error("[ERROR] Failed to send order status email:", mailErr.message);
+  }
+}
+
 // serve uploads
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
@@ -296,6 +329,180 @@ app.delete("/api/products/:id", (req, res) => {
     }
     if (result.affectedRows === 0) return res.status(404).json({ message: "Product not found" });
     res.json({ message: "Product deleted" });
+  });
+});
+
+// ---------------- CATEGORIES ----------------
+app.get("/api/categories", (req, res) => {
+  db.query("SELECT id, name FROM categories ORDER BY name ASC", (err, rows) => {
+    if (err) {
+      console.error("Fetch categories error:", err);
+      return res.status(500).json({ message: "Database error" });
+    }
+    res.json(rows);
+  });
+});
+
+app.post("/api/categories", (req, res) => {
+  const { name } = req.body;
+  if (!name || !name.trim()) {
+    return res.status(400).json({ message: "Category name is required." });
+  }
+
+  db.query("INSERT INTO categories (name) VALUES (?)", [name.trim()], (err, result) => {
+    if (err) {
+      console.error("Create category error:", err);
+      if (err.code === 'ER_DUP_ENTRY') {
+        return res.status(400).json({ message: "Category already exists." });
+      }
+      return res.status(500).json({ message: "Database error" });
+    }
+    res.json({ message: "Category created", id: result.insertId });
+  });
+});
+
+app.delete("/api/categories/:id", (req, res) => {
+  const { id } = req.params;
+  db.query("DELETE FROM categories WHERE id = ?", [id], (err, result) => {
+    if (err) {
+      console.error("Delete category error:", err);
+      return res.status(500).json({ message: "Database error" });
+    }
+    if (result.affectedRows === 0) return res.status(404).json({ message: "Category not found" });
+    res.json({ message: "Category deleted" });
+  });
+});
+
+// ---------------- VENDOR ORDERS ----------------
+app.get("/api/vendor/orders", (req, res) => {
+  db.query("SELECT * FROM orders ORDER BY created_at DESC", (err, orders) => {
+    if (err) {
+      console.error("Fetch vendor orders error:", err);
+      return res.status(500).json({ message: "Database error" });
+    }
+
+    if (!orders.length) {
+      return res.json([]);
+    }
+
+    const orderIds = orders.map(order => order.id);
+    db.query("SELECT * FROM order_items WHERE order_id IN (?)", [orderIds], (itemErr, items) => {
+      if (itemErr) {
+        console.error("Fetch order items error:", itemErr);
+        return res.status(500).json({ message: "Database error" });
+      }
+
+      const itemsByOrder = items.reduce((acc, item) => {
+        acc[item.order_id] = acc[item.order_id] || [];
+        acc[item.order_id].push({
+          qty: item.quantity,
+          name: item.product_name,
+          price: item.product_price
+        });
+        return acc;
+      }, {});
+
+      const formattedOrders = orders.map(order => ({
+        id: order.id,
+        order_number: order.order_number,
+        customer: order.customer_name,
+        customer_email: order.customer_email,
+        address: order.shipping_address,
+        total: parseFloat(order.total_amount) || 0,
+        status: String(order.order_status || 'pending').charAt(0).toUpperCase() + String(order.order_status || 'pending').slice(1),
+        date: new Date(order.created_at).toLocaleDateString('en-US'),
+        time: new Date(order.created_at).toLocaleTimeString('en-US'),
+        items: (itemsByOrder[order.id] || []).map(item => ({
+          qty: item.quantity,
+          name: item.product_name,
+          price: parseFloat(item.product_price) || 0
+        }))
+      }));
+
+      res.json(formattedOrders);
+    });
+  });
+});
+
+app.get("/api/admin/orders", (req, res) => {
+  db.query("SELECT * FROM orders ORDER BY created_at DESC", (err, orders) => {
+    if (err) {
+      console.error("Fetch admin orders error:", err);
+      return res.status(500).json({ message: "Database error" });
+    }
+
+    if (!orders.length) {
+      return res.json([]);
+    }
+
+    const orderIds = orders.map(order => order.id);
+    db.query("SELECT * FROM order_items WHERE order_id IN (?)", [orderIds], (itemErr, items) => {
+      if (itemErr) {
+        console.error("Fetch order items error:", itemErr);
+        return res.status(500).json({ message: "Database error" });
+      }
+
+      const itemsByOrder = items.reduce((acc, item) => {
+        acc[item.order_id] = acc[item.order_id] || [];
+        acc[item.order_id].push({
+          qty: item.quantity,
+          name: item.product_name,
+          price: item.product_price
+        });
+        return acc;
+      }, {});
+
+      const formattedOrders = orders.map(order => ({
+        id: order.id,
+        order_number: order.order_number,
+        customer: order.customer_name,
+        customer_email: order.customer_email,
+        address: order.shipping_address,
+        total: parseFloat(order.total_amount) || 0,
+        status: String(order.order_status || 'pending').charAt(0).toUpperCase() + String(order.order_status || 'pending').slice(1),
+        date: new Date(order.created_at).toLocaleDateString('en-US'),
+        time: new Date(order.created_at).toLocaleTimeString('en-US'),
+        items: (itemsByOrder[order.id] || []).map(item => ({
+          qty: item.quantity,
+          name: item.product_name,
+          price: parseFloat(item.product_price) || 0
+        }))
+      }));
+
+      res.json(formattedOrders);
+    });
+  });
+});
+
+app.put("/api/vendor/orders/:orderId/status", (req, res) => {
+  const { orderId } = req.params;
+  const { status } = req.body;
+  if (!status) return res.status(400).json({ message: "Status is required." });
+
+  const normalizedStatus = String(status).trim().toLowerCase();
+  const allowed = ['pending', 'processing', 'shipped', 'completed', 'cancelled'];
+  if (!allowed.includes(normalizedStatus)) {
+    return res.status(400).json({ message: "Invalid order status." });
+  }
+
+  db.query("SELECT * FROM orders WHERE id = ?", [orderId], (selectErr, rows) => {
+    if (selectErr) {
+      console.error("Fetch order error:", selectErr);
+      return res.status(500).json({ message: "Database error" });
+    }
+    if (!rows.length) return res.status(404).json({ message: "Order not found." });
+
+    const order = rows[0];
+    db.query("UPDATE orders SET order_status = ? WHERE id = ?", [normalizedStatus, orderId], async (updateErr, result) => {
+      if (updateErr) {
+        console.error("Update order status error:", updateErr);
+        return res.status(500).json({ message: "Database error" });
+      }
+      if (result.affectedRows === 0) return res.status(404).json({ message: "Order not found" });
+
+      await sendOrderStatusEmail(order, normalizedStatus);
+      res.json({ message: `Order status updated to ${normalizedStatus}.` });
+    });
   });
 });
 

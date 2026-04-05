@@ -6,6 +6,7 @@ const ManageProduct = () => {
   const [view, setView] = useState("list");
   const [notification, setNotification] = useState("");
   const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [currentId, setCurrentId] = useState(null);
 
   const [formData, setFormData] = useState({
@@ -28,8 +29,18 @@ const ManageProduct = () => {
     }
   };
 
+  const fetchCategories = async () => {
+    try {
+      const res = await axios.get("http://localhost:5000/api/categories");
+      setCategories(res.data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   useEffect(() => {
     fetchProducts();
+    fetchCategories();
   }, []);
 
   const handleInputChange = (e) => {
@@ -196,13 +207,15 @@ const ManageProduct = () => {
             required
           >
             <option value="">Select Category</option>
-            <option value="Electronics">Electronics</option>
-            <option value="Clothing">Clothing</option>
-            <option value="Food">Food</option>
-            <option value="Books">Books</option>
-            <option value="Toys">Toys</option>
+            {categories.map((cat) => (
+              <option key={cat.id} value={cat.name}>{cat.name}</option>
+            ))}
           </select>
-
+          {categories.length === 0 && (
+            <div style={{ color: '#d97706', fontSize: '0.9rem', marginTop: '6px' }}>
+              No categories available. Please ask admin to add categories first.
+            </div>
+          )}
 
           <label>Description</label>
           <textarea

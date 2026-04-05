@@ -1,30 +1,35 @@
 // OrderOversight.jsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import './orderOversight.css';
 import './adminDashboard.css'; // Reusing general admin styles
 
 const OrderOversight = () => {
-  // 1. Mock Data: Orders including disputes
-  const [orders, setOrders] = useState([
-    { 
-      id: 'ORD-1001', customer: 'John Doe', vendor: 'Burger King', rider: 'Mike Ross', 
-      amount: '$15.50', status: 'Delivered', date: '2025-03-01', issue: null 
-    },
-    { 
-      id: 'ORD-1002', customer: 'Alice Smith', vendor: 'Pizza Hut', rider: 'Sarah Connor', 
-      amount: '$45.00', status: 'Dispute', date: '2025-03-02', 
-      issue: { type: 'Item Missing', desc: 'Customer reported missing drink.', status: 'Open' } 
-    },
-    { 
-      id: 'ORD-1003', customer: 'Bob Brown', vendor: 'Tech Store', rider: 'Unassigned', 
-      amount: '$120.00', status: 'Pending', date: '2025-03-02', issue: null 
-    },
-    { 
-      id: 'ORD-1004', customer: 'Jane Doe', vendor: 'Sushi Place', rider: 'John Wick', 
-      amount: '$32.00', status: 'Dispute', date: '2025-03-01', 
-      issue: { type: 'Late Delivery', desc: 'Rider delayed by 45 mins. Food cold.', status: 'Open' } 
-    },
-  ]);
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const fetchOrders = async () => {
+      setLoading(true);
+      try {
+        const res = await fetch('http://localhost:5000/api/admin/orders');
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || 'Unable to fetch orders');
+
+        setOrders(data.map(order => ({
+          ...order,
+          amount: `PKR ${Number(order.total || 0).toFixed(2)}`,
+          status: order.status || 'Pending',
+          issue: order.issue || null
+        })));
+      } catch (error) {
+        console.error('Error fetching admin orders:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchOrders();
+  }, []);
 
   const [filter, setFilter] = useState('All');
   const [selectedOrder, setSelectedOrder] = useState(null);
@@ -112,7 +117,7 @@ const OrderOversight = () => {
               <th>Date</th>
               <th>Customer</th>
               <th>Vendor / Rider</th>
-              <th>Amount</th>
+              <th>Amount (PKR)</th>
               <th>Status</th>
               <th>Action</th>
             </tr>
@@ -162,7 +167,7 @@ const OrderOversight = () => {
 
             <div className="detail-grid">
               <div className="detail-box"><label>Customer</label><div>{selectedOrder.customer}</div></div>
-              <div className="detail-box"><label>Amount</label><div>{selectedOrder.amount}</div></div>
+              <div className="detail-box"><label>Amount (PKR)</label><div>{selectedOrder.amount}</div></div>
               <div className="detail-box"><label>Vendor</label><div>{selectedOrder.vendor}</div></div>
               <div className="detail-box"><label>Assigned Rider</label><div>{selectedOrder.rider}</div></div>
               <div className="detail-box"><label>Current Status</label>
