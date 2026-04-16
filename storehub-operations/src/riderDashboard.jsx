@@ -1,6 +1,18 @@
 // RiderDashboard.jsx
 import React, { useState, useEffect } from 'react';
 import './riderDashboard.css';
+import { io } from 'socket.io-client';
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+
+// Fix for default markers in react-leaflet
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: require('leaflet/dist/images/marker-icon-2x.png'),
+  iconUrl: require('leaflet/dist/images/marker-icon.png'),
+  shadowUrl: require('leaflet/dist/images/marker-shadow.png'),
+});
 
 const RiderDashboard = ({ onLogout }) => {
   // --- GLOBAL STATE ---
@@ -38,6 +50,11 @@ const RiderDashboard = ({ onLogout }) => {
   const [navStatus, setNavStatus] = useState('idle'); 
   const [progress, setProgress] = useState(0); 
   const [enteredOtp, setEnteredOtp] = useState('');
+
+  // --- SOCKET AND LOCATION ---
+  const [socket, setSocket] = useState(null);
+  const [location, setLocation] = useState(null);
+  const [locationError, setLocationError] = useState(null);
 
   // --- HANDLERS: TASKS ---
   const handleViewDetails = (task) => setSelectedTask(task);
@@ -81,6 +98,64 @@ const RiderDashboard = ({ onLogout }) => {
     }
     return () => clearInterval(interval);
   }, [navStatus, deliveryStatus]);
+
+  // --- SOCKET AND LOCATION SETUP ---
+  useEffect(() => {
+    // Connect to Socket.IO
+    const newSocket = io('http://localhost:5000');
+    setSocket(newSocket);
+
+    // Get initial location
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          const loc = { lat: latitude, lng: longitude };
+          setLocation(loc);
+          setLocationError(null);
+          
+          // Send location to backend
+          newSocket.emit('rider_location', {
+            riderId: 'rider123', // You might want to get this from auth
+            location: loc,
+            timestamp: new Date().toISOString()
+          });
+        },
+        (error) => {
+          console.error('Error getting location:', error);
+          setLocationError('Unable to get location. Please enable location services.');
+        }
+      );
+
+      // Watch position for real-time updates
+      const watchId = navigator.geolocation.watchPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          const loc = { lat: latitude, lng: longitude };
+          setLocation(loc);
+          
+          // Send updated location
+          newSocket.emit('rider_location', {
+            riderId: 'rider123',
+            location: loc,
+            timestamp: new Date().toISOString()
+          });
+        },
+        (error) => {
+          console.error('Error watching position:', error);
+        },
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+      );
+
+      // Cleanup
+      return () => {
+        newSocket.disconnect();
+        navigator.geolocation.clearWatch(watchId);
+      };
+    } else {
+      setLocationError('Geolocation is not supported by this browser.');
+    }
+  }, []);
 
   const handleStatusUpdate = (newStatus) => {
     setDeliveryStatus(newStatus);
@@ -338,6 +413,47 @@ const RiderDashboard = ({ onLogout }) => {
     </div>
   );
 
+  const renderLocation = () => (
+    <div>
+      <h3 className="section-title">My Location</h3>
+      {locationError ? (
+        <div className="empty-state">
+          <h3>Location Error</h3>
+          <p>{locationError}</p>
+        </div>
+      ) : location ? (
+        <div>
+          <div style={{ marginBottom: '20px', padding: '15px', background: '#f8f9fa', borderRadius: '8px' }}>
+            <h4>Current Location</h4>
+            <p>Latitude: {location.lat.toFixed(6)}</p>
+            <p>Longitude: {location.lng.toFixed(6)}</p>
+            <p>Last updated: {new Date().toLocaleTimeString()}</p>
+          </div>
+          <div style={{ height: '400px', width: '100%', borderRadius: '8px', overflow: 'hidden' }}>
+            <MapContainer center={[location.lat, location.lng]} zoom={15} style={{ height: '100%', width: '100%' }}>
+              <TileLayer
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              />
+              <Marker position={[location.lat, location.lng]}>
+                <Popup>
+                  You are here!<br />
+                  Lat: {location.lat.toFixed(6)}<br />
+                  Lng: {location.lng.toFixed(6)}
+                </Popup>
+              </Marker>
+            </MapContainer>
+          </div>
+        </div>
+      ) : (
+        <div className="empty-state">
+          <h3>Getting Location...</h3>
+          <p>Please allow location access to track your position.</p>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="rider-layout">
       <aside className="rider-sidebar">
@@ -345,6 +461,7 @@ const RiderDashboard = ({ onLogout }) => {
         <nav className="sidebar-menu">
           <button className={`menu-item ${activeTab === 'new' ? 'active' : ''}`} onClick={() => setActiveTab('new')}>📦 Available Tasks</button>
           <button className={`menu-item ${activeTab === 'active' ? 'active' : ''}`} onClick={() => setActiveTab('active')}>🚀 Current Deliveries</button>
+          <button className={`menu-item ${activeTab === 'location' ? 'active' : ''}`} onClick={() => setActiveTab('location')}>📍 My Location</button>
           <button className={`menu-item ${activeTab === 'earnings' ? 'active' : ''}`} onClick={() => setActiveTab('earnings')}>💰 Earnings & History</button>
           <button className={`menu-item ${activeTab === 'availability' ? 'active' : ''}`} onClick={() => setActiveTab('availability')}>📅 Availability</button>
         </nav>
@@ -363,7 +480,7 @@ const RiderDashboard = ({ onLogout }) => {
           {!isOnline && activeTab !== 'availability' ? (
             <div className="empty-state"><h3>You are Offline</h3><p>Go to Availability tab or toggle status to start.</p><button className="btn btn-primary" style={{marginTop:'15px', width:'auto'}} onClick={() => setActiveTab('availability')}>Go to Availability</button></div>
           ) : (
-            activeTab === 'new' ? renderNewTasks() : activeTab === 'active' ? renderActiveDelivery() : activeTab === 'earnings' ? renderEarnings() : renderAvailability()
+            activeTab === 'new' ? renderNewTasks() : activeTab === 'active' ? renderActiveDelivery() : activeTab === 'location' ? renderLocation() : activeTab === 'earnings' ? renderEarnings() : renderAvailability()
           )}
         </div>
       </main>

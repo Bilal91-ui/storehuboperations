@@ -7,6 +7,8 @@ const multer = require("multer");
 const path = require("path");
 const bcrypt = require("bcrypt");
 const nodemailer = require("nodemailer");
+const { createServer } = require("http");
+const { Server } = require("socket.io");
 
 console.log("Loaded NODE_ENV:", process.env.NODE_ENV);
 console.log("All env vars starting with NODE:", Object.keys(process.env).filter(key => key.startsWith('NODE')));
@@ -14,6 +16,17 @@ console.log("All env vars starting with NODE:", Object.keys(process.env).filter(
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// Create HTTP server
+const server = createServer(app);
+
+// Initialize Socket.IO
+const io = new Server(server, {
+  cors: {
+    origin: "*", // Allow all origins for now, adjust as needed
+    methods: ["GET", "POST"]
+  }
+});
 
 // ================= EMAIL SERVICE =================
 const transporter = nodemailer.createTransport({
@@ -58,6 +71,22 @@ async function sendOrderStatusEmail(order, status) {
     console.error("[ERROR] Failed to send order status email:", mailErr.message);
   }
 }
+
+// ================= SOCKET.IO HANDLERS =================
+io.on('connection', (socket) => {
+  console.log('A user connected:', socket.id);
+
+  // Rider location update
+  socket.on('rider_location', (data) => {
+    console.log('Rider location received:', data);
+    // You can store this in DB or broadcast to other clients
+    // For now, just log it
+  });
+
+  socket.on('disconnect', () => {
+    console.log('User disconnected:', socket.id);
+  });
+});
 
 // serve uploads
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
@@ -985,4 +1014,4 @@ app.get("/api/system-stats", async (req, res) => {
   }
 });
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
