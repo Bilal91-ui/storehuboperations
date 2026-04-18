@@ -61,16 +61,16 @@ const AdminDashboard = ({ onLogout }) => {
       <div className="stats-grid">
         <div className="stat-card">
           <div className="stat-title">Total Platform Revenue</div>
-          <div className="stat-value">$1,254,000</div>
+          <div className="stat-value">PKR 1,254,000</div>
           <div style={{ fontSize: '0.8rem', color: '#10b981', marginTop: '5px' }}>+12% this month</div>
         </div>
         <div className="stat-card">
           <div className="stat-title">Commission Earned (10%)</div>
-          <div className="stat-value" style={{ color: '#10b981' }}>$125,400</div>
+          <div className="stat-value" style={{ color: '#10b981' }}>PKR 125,400</div>
         </div>
         <div className="stat-card">
           <div className="stat-title">Pending Vendor Payouts</div>
-          <div className="stat-value" style={{ color: '#f59e0b' }}>$45,200</div>
+          <div className="stat-value" style={{ color: '#f59e0b' }}>PKR 45,200</div>
         </div>
       </div>
 
@@ -189,7 +189,7 @@ const AdminDashboard = ({ onLogout }) => {
           <h2 style={{ marginBottom: '20px' }}>Dashboard Overview</h2>
           <div className="stats-grid">
             <div className="stat-card"><div className="stat-title">Total Users</div><div className="stat-value">1,204</div></div>
-            <div className="stat-card"><div className="stat-title">Today's Revenue</div><div className="stat-value" style={{ color: '#10b981' }}>$12,500</div></div>
+            <div className="stat-card"><div className="stat-title">Today's Revenue</div><div className="stat-value" style={{ color: '#10b981' }}>PKR 12,500</div></div>
             <div className="stat-card"><div className="stat-title">Pending Verifications</div><div className="stat-value" style={{ color: '#f59e0b' }}>3</div></div>
             <div className="stat-card"><div className="stat-title">System Health</div><div className="stat-value" style={{ color: '#3b82f6' }}>Good</div></div>
           </div>

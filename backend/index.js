@@ -575,7 +575,7 @@ app.get("/api/vendor/orders", (req, res) => {
     }
 
     const orderIds = orders.map(order => order.id);
-    db.query("SELECT * FROM order_items WHERE order_id IN (?)", [orderIds], (itemErr, items) => {
+    db.query("SELECT oi.*, p.name AS product_name, p.image AS product_image, p.description AS product_description FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id IN (?)", [orderIds], (itemErr, items) => {
       if (itemErr) {
         console.error("Fetch order items error:", itemErr);
         return res.status(500).json({ message: "Database error" });
@@ -586,7 +586,9 @@ app.get("/api/vendor/orders", (req, res) => {
         acc[item.order_id].push({
           qty: item.quantity,
           name: item.product_name,
-          price: item.product_price
+          price: parseFloat(item.product_price) || 0,
+          image: item.product_image || null,
+          description: item.product_description || ''
         });
         return acc;
       }, {});
@@ -601,11 +603,7 @@ app.get("/api/vendor/orders", (req, res) => {
         status: String(order.order_status || 'pending').charAt(0).toUpperCase() + String(order.order_status || 'pending').slice(1),
         date: new Date(order.created_at).toLocaleDateString('en-US'),
         time: new Date(order.created_at).toLocaleTimeString('en-US'),
-        items: (itemsByOrder[order.id] || []).map(item => ({
-          qty: item.quantity,
-          name: item.product_name,
-          price: parseFloat(item.product_price) || 0
-        }))
+        items: itemsByOrder[order.id] || []
       }));
 
       res.json(formattedOrders);
@@ -625,7 +623,7 @@ app.get("/api/admin/orders", (req, res) => {
     }
 
     const orderIds = orders.map(order => order.id);
-    db.query("SELECT * FROM order_items WHERE order_id IN (?)", [orderIds], (itemErr, items) => {
+    db.query("SELECT oi.*, p.name as product_name FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id IN (?)", [orderIds], (itemErr, items) => {
       if (itemErr) {
         console.error("Fetch order items error:", itemErr);
         return res.status(500).json({ message: "Database error" });

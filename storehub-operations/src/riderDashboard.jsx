@@ -339,9 +339,9 @@ const RiderDashboard = ({ onLogout }) => {
 
         {/* Summary (Req 3) */}
         <div className="stats-grid">
-          <div className="stat-card"><div className="stat-title">Total Earnings</div><div className="stat-value" style={{color:'#10b981'}}>${totalEarnings.toFixed(2)}</div></div>
+          <div className="stat-card"><div className="stat-title">Total Earnings</div><div className="stat-value" style={{color:'#10b981'}}>PKR {totalEarnings.toFixed(2)}</div></div>
           <div className="stat-card"><div className="stat-title">Completed Orders</div><div className="stat-value">{filteredData.length}</div></div>
-          <div className="stat-card"><div className="stat-title">COD Collected</div><div className="stat-value" style={{color:'#f59e0b'}}>${totalCod.toFixed(2)}</div></div>
+          <div className="stat-card"><div className="stat-title">COD Collected</div><div className="stat-value" style={{color:'#f59e0b'}}>PKR {totalCod.toFixed(2)}</div></div>
         </div>
 
         {/* List (Req 5 & 6) */}
@@ -362,11 +362,11 @@ const RiderDashboard = ({ onLogout }) => {
                   <td>
                     {item.type === 'Payout' ? (
                       <div className="breakdown-cell">
-                        <span className="text-base">Base: ${item.base.toFixed(2)}</span>
-                        {item.bonus > 0 && <span className="text-bonus">+ Bonus: ${item.bonus.toFixed(2)}</span>}
+                        <span className="text-base">Base: PKR {item.base.toFixed(2)}</span>
+                        {item.bonus > 0 && <span className="text-bonus">+ Bonus: PKR {item.bonus.toFixed(2)}</span>}
                       </div>
                     ) : (
-                      <span className="text-cod">COD: ${item.cod.toFixed(2)}</span>
+                      <span className="text-cod">COD: PKR {item.cod.toFixed(2)}</span>
                     )}
                   </td>
                   <td>
@@ -517,14 +517,14 @@ const RiderDashboard = ({ onLogout }) => {
             
             {selectedTxn.type === 'Payout' ? (
               <>
-                <div className="txn-row"><span className="txn-label">Base Fare</span><span className="txn-val">${selectedTxn.base.toFixed(2)}</span></div>
-                <div className="txn-row"><span className="txn-label">Surge/Bonus</span><span className="txn-val" style={{color:'#10b981'}}>+ ${selectedTxn.bonus.toFixed(2)}</span></div>
-                <div className="txn-total"><span>Total Payout</span><span>${(selectedTxn.base + selectedTxn.bonus).toFixed(2)}</span></div>
+                <div className="txn-row"><span className="txn-label">Base Fare</span><span className="txn-val">PKR {selectedTxn.base.toFixed(2)}</span></div>
+                <div className="txn-row"><span className="txn-label">Surge/Bonus</span><span className="txn-val" style={{color:'#10b981'}}>+ PKR {selectedTxn.bonus.toFixed(2)}</span></div>
+                <div className="txn-total"><span>Total Payout</span><span>PKR {(selectedTxn.base + selectedTxn.bonus).toFixed(2)}</span></div>
               </>
             ) : (
               <>
-                 <div className="txn-row"><span className="txn-label">Cash Collected</span><span className="txn-val">${selectedTxn.cod.toFixed(2)}</span></div>
-                 <div className="txn-total" style={{color:'#f59e0b'}}><span>Amount Owed</span><span>-${selectedTxn.cod.toFixed(2)}</span></div>
+                 <div className="txn-row"><span className="txn-label">Cash Collected</span><span className="txn-val">PKR {selectedTxn.cod.toFixed(2)}</span></div>
+                 <div className="txn-total" style={{color:'#f59e0b'}}><span>Amount Owed</span><span>- PKR {selectedTxn.cod.toFixed(2)}</span></div>
               </>
             )}
             

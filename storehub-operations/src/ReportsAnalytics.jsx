@@ -15,14 +15,14 @@ const ReportsAnalytics = () => {
   // --- MOCK DATA GENERATORS ---
   
   const generateSalesData = () => ({
-    summary: { total: '$15,400', orders: 342, avg: '$45.02' },
+    summary: { total: 'PKR 15,400', orders: 342, avg: 'PKR 45.02' },
     chart: [45, 60, 35, 80, 50, 90, 70], // Last 7 days
     labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
     table: [
-      { id: 1, date: '2025-03-01', revenue: '$2,400', orders: 55, topItem: 'Burger' },
-      { id: 2, date: '2025-03-02', revenue: '$3,100', orders: 62, topItem: 'Pizza' },
-      { id: 3, date: '2025-03-03', revenue: '$1,800', orders: 40, topItem: 'Sushi' },
-      { id: 4, date: '2025-03-04', revenue: '$4,500', orders: 95, topItem: 'Steak' },
+      { id: 1, date: '2025-03-01', revenue: 'PKR 2,400', orders: 55, topItem: 'Burger' },
+      { id: 2, date: '2025-03-02', revenue: 'PKR 3,100', orders: 62, topItem: 'Pizza' },
+      { id: 3, date: '2025-03-03', revenue: 'PKR 1,800', orders: 40, topItem: 'Sushi' },
+      { id: 4, date: '2025-03-04', revenue: 'PKR 4,500', orders: 95, topItem: 'Steak' },
     ]
   });
 
