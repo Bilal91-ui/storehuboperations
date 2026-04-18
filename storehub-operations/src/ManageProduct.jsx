@@ -96,6 +96,12 @@ const ManageProduct = () => {
         data.append("image", formData.image);
       }
 
+      const sellerData = localStorage.getItem('sellerData');
+      if (sellerData) {
+        const { seller_id } = JSON.parse(sellerData);
+        if (seller_id) data.append('seller_id', seller_id);
+      }
+
       if (currentId) {
         await axios.put(
           `http://localhost:5000/api/products/${currentId}`,

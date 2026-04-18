@@ -196,8 +196,27 @@ function assignOrderToRider(orderId, riderId, callback) {
 }
 
 // ================= SOCKET.IO HANDLERS =================
+// Map to track seller user_id to socket connections
+const sellerConnections = new Map(); // seller_user_id -> socket object
+const riderConnections = new Map();  // rider_user_id -> socket object
+
 io.on('connection', (socket) => {
-  console.log('A user connected:', socket.id);
+  console.log('🔌 [Socket] User connected:', socket.id);
+
+  // Seller login - register their socket connection
+  socket.on('seller_login', (data) => {
+    const { user_id, seller_id } = data;
+    console.log(`📍 [Seller Login] Seller ${seller_id} (user_id: ${user_id}) logged in with socket: ${socket.id}`);
+    sellerConnections.set(user_id, socket);
+    console.log(`📊 [Seller Connections] Total sellers online: ${sellerConnections.size}`);
+  });
+
+  // Rider login - register their socket connection
+  socket.on('rider_login', (data) => {
+    const { user_id, rider_id } = data;
+    console.log(`📍 [Rider Login] Rider ${rider_id} (user_id: ${user_id}) logged in with socket: ${socket.id}`);
+    riderConnections.set(user_id, socket);
+  });
 
   // Rider location update
   socket.on('rider_location', (data) => {
@@ -244,7 +263,20 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
+    console.log('❌ [Socket Disconnect] User disconnected:', socket.id);
+    // Remove from seller and rider connections
+    for (let [userId, userSocket] of sellerConnections.entries()) {
+      if (userSocket.id === socket.id) {
+        sellerConnections.delete(userId);
+        console.log(`📍 [Seller Disconnected] Seller user_id ${userId} disconnected, remaining: ${sellerConnections.size}`);
+      }
+    }
+    for (let [userId, userSocket] of riderConnections.entries()) {
+      if (userSocket.id === socket.id) {
+        riderConnections.delete(userId);
+        console.log(`📍 [Rider Disconnected] Rider user_id ${userId} disconnected`);
+      }
+    }
   });
 });
 
@@ -430,9 +462,10 @@ app.post("/api/auth/login", async (req, res) => {
 
   // 2. NORMAL USER/PARTNER LOGIN
   db.query(
-    `SELECT u.*, r.role_name 
+    `SELECT u.*, r.role_name, s.id AS seller_id 
      FROM users u 
      JOIN roles r ON u.role_id = r.id 
+     LEFT JOIN sellers s ON u.id = s.user_id
      WHERE u.email = ?`,
     [email],
     async (err, rows) => {
@@ -451,7 +484,8 @@ app.post("/api/auth/login", async (req, res) => {
         message: "Login success",
         user_id: user.id,
         role_id: user.role_id,
-        role: user.role_name // <-- Asal DB role frontend ko bhejein
+        role: user.role_name,
+        seller_id: user.seller_id || null
       });
     }
   );
@@ -459,22 +493,25 @@ app.post("/api/auth/login", async (req, res) => {
 
 // ---------------- PRODUCTS ----------------
 app.post("/api/products", upload.single("image"), (req, res) => {
-  const { name, price, stock, category, description } = req.body;
+  const { name, price, stock, category, description, seller_id } = req.body;
   const imagePath = req.file ? `/uploads/${req.file.filename}` : null;
+
+  console.log("[DEBUG] POST /api/products received:", { name, price, stock, category, description, seller_id });
 
   if (!name || !price || price <= 0 || !stock || stock < 0) {
     return res.status(400).json({ message: "Invalid product data: name, positive price, and non-negative stock required" });
   }
 
   const sql = `
-    INSERT INTO products (name, price, stock, category, description, image, basePrice)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO products (seller_id, name, price, stock, category, description, image, basePrice)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `;
-  db.query(sql,[name, price, stock, category || null, description || null, imagePath, price], (err, result) => {
+  db.query(sql,[seller_id || null, name, price, stock, category || null, description || null, imagePath, price], (err, result) => {
     if (err) {
       console.error("Insert product error:", err);
       return res.status(500).json({ message: "Database error" });
     }
+    console.log(`[SUCCESS] Product added with seller_id:${seller_id}, product_id:${result.insertId}`);
     res.json({ message: "Product added", id: result.insertId });
   });
 });
@@ -491,15 +528,16 @@ app.get("/api/products", (req, res) => {
 
 app.put("/api/products/:id", upload.single("image"), (req, res) => {
   const { id } = req.params;
-  const { name, price, stock, category, description, image } = req.body;
+  const { name, price, stock, category, description, image, seller_id } = req.body;
   const imagePath = req.file ? `/uploads/${req.file.filename}` : image || null;
+  const sellerValue = seller_id === undefined ? null : seller_id;
 
   const sql = `
     UPDATE products 
-    SET name = ?, price = ?, stock = ?, category = ?, description = ?, image = ?
+    SET seller_id = COALESCE(?, seller_id), name = ?, price = ?, stock = ?, category = ?, description = ?, image = ?
     WHERE id = ?
   `;
-  db.query(sql,[name, price, stock, category || null, description || null, imagePath, id], (err, result) => {
+  db.query(sql,[sellerValue, name, price, stock, category || null, description || null, imagePath, id], (err, result) => {
     if (err) {
       console.error("Update product error:", err);
       return res.status(500).json({ message: "Database error" });
@@ -839,7 +877,8 @@ app.get("/api/cart", (req, res) => {
       price: r.price,
       salePrice: r.salePrice,
       basePrice: r.basePrice,
-      image: r.image
+      image: r.image,
+      seller_id: r.seller_id
     }));
     res.json(out);
   });
@@ -996,6 +1035,97 @@ app.post("/api/orders", (req, res) => {
           const finalizeOrder = () => {
             db.commit((err) => {
               if (err) return db.rollback(() => res.status(500).json({ message: "Database error" }));
+              
+              // Fetch sellers for products in this order to send notifications
+              const productIds = cart_items.map(item => item.product_id || item.id);
+              console.log(`\n🛒 [Order Created] Order #${order_number} (ID: ${orderId})`);
+              console.log(`   Product IDs: [${productIds.join(', ')}]`);
+              console.log(`   Customer: ${customer_name}`);
+              
+              const sellerQuery = `
+                SELECT DISTINCT p.seller_id, s.user_id, s.business_name, u.email, u.full_name
+                FROM products p
+                LEFT JOIN sellers s ON p.seller_id = s.id
+                LEFT JOIN users u ON s.user_id = u.id
+                WHERE p.id IN (?)
+              `;
+              
+              db.query(sellerQuery, [productIds], (err, sellerRows) => {
+                if (err) {
+                  console.error("❌ Error fetching sellers:", err);
+                } else {
+                  console.log(`   Found sellers: ${sellerRows.length}`);
+                  
+                  // Send notifications to all sellers whose products are in this order
+                  sellerRows.forEach(seller => {
+                    if (!seller.seller_id) {
+                      console.log(`   ⚠️  Product has no seller_id, skipping`);
+                      return;
+                    }
+                    
+                    // Get the user_id for this seller
+                    const sellerUserId = seller.user_id;
+                    const sellerSocket = sellerConnections.get(sellerUserId);
+                    
+                    // Prepare notification data
+                    const notificationData = {
+                      order_id: orderId,
+                      order_number: order_number,
+                      customer_name: customer_name,
+                      customer_phone: customer_phone,
+                      customer_email: customer_email,
+                      total_amount: total_amount,
+                      created_at: new Date().toISOString(),
+                      items: cart_items
+                    };
+                    
+                    // Send via Socket.IO if seller is logged in
+                    if (sellerSocket) {
+                      sellerSocket.emit('new_order_notification', notificationData);
+                      console.log(`   ✅ [NOTIFICATION SENT] Seller ${sellerUserId} (${seller.business_name}) via Socket`);
+                    } else {
+                      console.log(`   ℹ️  Seller ${sellerUserId} (${seller.business_name}) is OFFLINE - sending email only`);
+                    }
+                    
+                    // Also send email notification
+                    if (seller.email && transporter) {
+                      const mailOptions = {
+                        from: process.env.EMAIL_USER,
+                        to: seller.email,
+                        subject: `New Order #${order_number} - ${customer_name}`,
+                        text: `
+Dear ${seller.full_name},
+
+You have received a new order!
+
+Order Details:
+- Order Number: ${order_number}
+- Order ID: ${orderId}
+- Customer: ${customer_name}
+- Phone: ${customer_phone}
+- Total Amount: Rs ${total_amount}
+- Payment Method: ${payment_method}
+- Delivery Address: ${shipping_address}
+
+Please log in to your StoreHub dashboard to view and accept this order.
+
+Best regards,
+StoreHub Team
+                        `
+                      };
+                      
+                      transporter.sendMail(mailOptions, (mailErr) => {
+                        if (mailErr) {
+                          console.error(`[ERROR] Failed to send email to seller ${seller.email}:`, mailErr.message);
+                        } else {
+                          console.log(`[SUCCESS] Email notification sent to ${seller.email}`);
+                        }
+                      });
+                    }
+                  });
+                }
+              });
+              
               res.json({
                 message: "Order created successfully",
                 order_id: orderId,

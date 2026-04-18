@@ -1,5 +1,6 @@
 // VendorOrders.jsx
 import React, { useState, useEffect } from 'react';
+import { io } from 'socket.io-client';
 import './vendororders.css';
 import './sellerDashboard.css'; // Reuse generic styles
 
@@ -7,9 +8,65 @@ const VendorOrders = () => {
   // 1. Mock Database
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [socket, setSocket] = useState(null);
+  const [newOrderAlert, setNewOrderAlert] = useState(null);
 
   useEffect(() => {
     fetchOrders();
+    
+    // Connect to Socket.IO server
+    const socketInstance = io('http://localhost:5000', {
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      reconnectionAttempts: 5
+    });
+
+    socketInstance.on('connect', () => {
+      console.log('✅ Connected to server');
+      // Notify server that a seller has logged in
+      const sellerData = localStorage.getItem('sellerData');
+      if (sellerData) {
+        const { user_id, seller_id } = JSON.parse(sellerData);
+        socketInstance.emit('seller_login', { user_id, seller_id });
+      }
+    });
+
+    // Listen for new order notifications
+    socketInstance.on('new_order_notification', (notificationData) => {
+      console.log('🔔 New Order Notification:', notificationData);
+      
+      // Show alert to seller
+      setNewOrderAlert(notificationData);
+      
+      // Auto hide alert after 8 seconds
+      setTimeout(() => setNewOrderAlert(null), 8000);
+      
+      // Refresh orders list
+      fetchOrders();
+      
+      // Play sound notification if possible
+      try {
+        const audio = new Audio('data:audio/wav;base64,UklGRiYAAABXQVZFZm10IBAAAAABAAEAQB8AAAB9AAACABAAZGF0YQIAAAAAAA==');
+        audio.play().catch(e => console.log('Audio play failed:', e));
+      } catch (e) {
+        console.log('Sound notification skipped');
+      }
+    });
+
+    socketInstance.on('disconnect', () => {
+      console.log('❌ Disconnected from server');
+    });
+
+    socketInstance.on('connect_error', (error) => {
+      console.error('Connection error:', error);
+    });
+
+    setSocket(socketInstance);
+
+    return () => {
+      socketInstance.disconnect();
+    };
   }, []);
 
   const fetchOrders = async () => {
@@ -111,7 +168,68 @@ const VendorOrders = () => {
         <h2>Order Management</h2>
       </div>
 
+      {/* New Order Notification Alert */}
+      {newOrderAlert && (
+        <div className="new-order-alert" style={{
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          color: 'white',
+          padding: '20px',
+          marginBottom: '20px',
+          borderRadius: '8px',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+          animation: 'slideDown 0.3s ease-out'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+            <div>
+              <h3 style={{ margin: '0 0 10px 0', fontSize: '18px' }}>🔔 NEW ORDER RECEIVED!</h3>
+              <p style={{ margin: '5px 0', fontSize: '14px' }}>
+                <strong>Order #:</strong> {newOrderAlert.order_number}
+              </p>
+              <p style={{ margin: '5px 0', fontSize: '14px' }}>
+                <strong>Customer:</strong> {newOrderAlert.customer_name} ({newOrderAlert.customer_phone})
+              </p>
+              <p style={{ margin: '5px 0', fontSize: '14px' }}>
+                <strong>Total Amount:</strong> PKR {newOrderAlert.total_amount.toFixed(2)}
+              </p>
+              <p style={{ margin: '5px 0', fontSize: '14px' }}>
+                <strong>Payment Method:</strong> {newOrderAlert.payment_method.toUpperCase()}
+              </p>
+              <p style={{ margin: '5px 0', fontSize: '13px', color: '#ddd' }}>
+                {new Date(newOrderAlert.created_at).toLocaleString()}
+              </p>
+            </div>
+            <button 
+              onClick={() => setNewOrderAlert(null)}
+              style={{
+                background: 'rgba(255,255,255,0.3)',
+                border: 'none',
+                color: 'white',
+                cursor: 'pointer',
+                fontSize: '20px',
+                padding: '0 10px',
+                borderRadius: '4px'
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
       {notification && <div className="alert-success">🔔 {notification}</div>}
+
+      <style>{`
+        @keyframes slideDown {
+          from {
+            opacity: 0;
+            transform: translateY(-20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+      `}</style>
 
       <table className="data-table">
         <thead>
