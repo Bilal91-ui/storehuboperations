@@ -72,6 +72,129 @@ async function sendOrderStatusEmail(order, status) {
   }
 }
 
+// ================= HELPER FUNCTIONS =================
+
+// Calculate distance between two points using Haversine formula
+function calculateDistance(lat1, lng1, lat2, lng2) {
+  const R = 6371; // Earth's radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLng/2) * Math.sin(dLng/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+// Find riders within specified radius of a location
+function findNearbyRiders(centerLocation, radiusKm, callback) {
+  const { lat, lng } = centerLocation;
+
+  // Get all active riders with locations
+  const sql = `
+    SELECT r.id, r.user_id, r.current_location, u.full_name
+    FROM riders r
+    JOIN users u ON r.user_id = u.id
+    WHERE r.is_active = TRUE AND r.current_location IS NOT NULL
+  `;
+
+  db.query(sql, (err, riders) => {
+    if (err) {
+      console.error('Error fetching riders:', err);
+      return callback([]);
+    }
+
+    const nearbyRiders = [];
+
+    riders.forEach(rider => {
+      try {
+        let riderLocation = rider.current_location;
+        // Handle both JSON string and parsed object
+        if (typeof riderLocation === 'string') {
+          riderLocation = JSON.parse(riderLocation);
+        }
+        const distance = calculateDistance(lat, lng, riderLocation.lat, riderLocation.lng);
+
+        if (distance <= radiusKm) {
+          nearbyRiders.push({
+            id: rider.id,
+            user_id: rider.user_id,
+            name: rider.full_name,
+            location: riderLocation,
+            distance: distance
+          });
+        }
+      } catch (parseErr) {
+        console.error('Error parsing rider location for rider', rider.id, ':', parseErr);
+      }
+    });
+
+    // Sort by distance (closest first)
+    nearbyRiders.sort((a, b) => a.distance - b.distance);
+
+    console.log(`Found ${nearbyRiders.length} riders within ${radiusKm}km`);
+    callback(nearbyRiders);
+  });
+}
+
+// Assign order to riders sequentially
+function assignOrderToRiders(orderId, riders, callback) {
+  if (riders.length === 0) {
+    console.log('No riders available nearby');
+    return callback(false);
+  }
+
+  console.log(`Found ${riders.length} riders within range. Notifying closest rider: ${riders[0].name} (${riders[0].distance.toFixed(1)}km)`);
+
+  // For testing: just assign to the first rider immediately
+  assignOrderToRider(orderId, riders[0].id, (success) => {
+    if (success) {
+      console.log(`Order ${orderId} assigned to rider ${riders[0].name}`);
+      callback(true);
+    } else {
+      console.log('Failed to assign order to rider');
+      callback(false);
+    }
+  });
+
+  // TODO: Implement proper sequential notification system
+  // Send notification to first rider
+  // io.emit('rider_order_notification', {
+  //   orderId: orderId,
+  //   riderId: riders[0].id,
+  //   riderUserId: riders[0].user_id,
+  //   message: `New order available (${riders[0].distance.toFixed(1)}km away)`
+  // });
+}
+
+// Actually assign order to a specific rider
+function assignOrderToRider(orderId, riderId, callback) {
+  db.query(
+    "UPDATE orders SET rider_id = ?, rider_assignment_status = 'assigned' WHERE id = ? AND rider_id IS NULL",
+    [riderId, orderId],
+    (err, result) => {
+      if (err) {
+        console.error('Error assigning rider:', err);
+        return callback(false);
+      }
+
+      if (result.affectedRows > 0) {
+        console.log(`Order ${orderId} assigned to rider ${riderId}`);
+        // Notify the rider that they got the order
+        console.log(`Emitting rider_order_assigned to all clients:`, { orderId, riderId });
+        io.emit('rider_order_assigned', {
+          orderId: orderId,
+          riderId: riderId
+        });
+        callback(true);
+      } else {
+        console.log(`Order ${orderId} already assigned or not found`);
+        callback(false);
+      }
+    }
+  );
+}
+
 // ================= SOCKET.IO HANDLERS =================
 io.on('connection', (socket) => {
   console.log('A user connected:', socket.id);
@@ -79,8 +202,45 @@ io.on('connection', (socket) => {
   // Rider location update
   socket.on('rider_location', (data) => {
     console.log('Rider location received:', data);
-    // You can store this in DB or broadcast to other clients
-    // For now, just log it
+    // Store in database
+    if (data.user_id && data.location) {
+      const updateSql = `UPDATE riders SET current_location = ?, updated_at = NOW() WHERE user_id = ?`;
+      db.query(updateSql, [JSON.stringify(data.location), data.user_id], (err) => {
+        if (err) console.error('Error updating rider location:', err);
+        else console.log('Rider location updated for user_id:', data.user_id);
+      });
+    }
+  });
+
+  // Seller location update
+  socket.on('seller_location', (data) => {
+    console.log('Seller location received:', data);
+    // Store in database
+    if (data.user_id && data.location) {
+      const updateSql = `UPDATE sellers SET current_location = ?, updated_at = NOW() WHERE user_id = ?`;
+      db.query(updateSql, [JSON.stringify(data.location), data.user_id], (err) => {
+        if (err) console.error('Error updating seller location:', err);
+        else console.log('Seller location updated for user_id:', data.user_id);
+      });
+    }
+  });
+
+  // Rider order response
+  socket.on('rider_order_response', (data) => {
+    console.log('Rider order response:', data);
+    const { orderId, riderId, accepted } = data;
+
+    if (accepted) {
+      assignOrderToRider(orderId, riderId, (success) => {
+        if (success) {
+          // Notify other riders that order is taken
+          io.emit('order_taken', { orderId });
+        }
+      });
+    } else {
+      // Rider rejected, this will be handled in assignOrderToRiders
+      console.log(`Rider ${riderId} rejected order ${orderId}`);
+    }
   });
 
   socket.on('disconnect', () => {
@@ -535,6 +695,104 @@ app.put("/api/vendor/orders/:orderId/status", (req, res) => {
   });
 });
 
+// Accept order by seller and assign to nearby riders
+app.post("/api/vendor/orders/:orderId/accept", (req, res) => {
+  const { orderId } = req.params;
+  const { sellerId } = req.body; // sellerId should be the sellers table id, not user_id
+
+  console.log(`Accepting order ${orderId} for seller ${sellerId}`);
+
+  if (!sellerId) return res.status(400).json({ message: "Seller ID is required." });
+
+  // First, update order with seller_id and status
+  db.query(
+    "UPDATE orders SET seller_id = ?, order_status = 'processing' WHERE id = ? AND seller_id IS NULL",
+    [sellerId, orderId],
+    (updateErr, result) => {
+      if (updateErr) {
+        console.error("Update order error:", updateErr);
+        return res.status(500).json({ message: "Database error" });
+      }
+      if (result.affectedRows === 0) {
+        console.log(`Order ${orderId} already accepted or not found`);
+        return res.status(400).json({ message: "Order already accepted or not found." });
+      }
+
+      console.log(`Order ${orderId} updated with seller ${sellerId}`);
+
+      // Get seller location
+      db.query("SELECT current_location FROM sellers WHERE id = ?", [sellerId], (sellerErr, sellerRows) => {
+        if (sellerErr) {
+          console.error("Fetch seller location error:", sellerErr);
+          return res.status(500).json({ message: "Database error" });
+        }
+        if (!sellerRows.length || !sellerRows[0].current_location) {
+          console.log(`Seller ${sellerId} has no location`);
+          return res.status(400).json({ message: "Seller location not available." });
+        }
+
+        let sellerLocation = sellerRows[0].current_location;
+        // Handle both JSON string and parsed object
+        if (typeof sellerLocation === 'string') {
+          sellerLocation = JSON.parse(sellerLocation);
+        }
+        console.log(`Seller location:`, sellerLocation);
+        console.log(`Seller location:`, sellerLocation);
+
+        // Find nearby riders within 5km
+        findNearbyRiders(sellerLocation, 5, (riders) => {
+          console.log(`Found ${riders.length} nearby riders`);
+          if (riders.length === 0) {
+            return res.status(200).json({ message: "Order accepted, but no riders available nearby." });
+          }
+
+          // Send notifications to riders in order of proximity
+          assignOrderToRiders(orderId, riders, (success) => {
+            if (success) {
+              console.log(`Order ${orderId} successfully assigned`);
+              res.json({ message: "Order accepted and assigned to riders." });
+            } else {
+              console.log(`Failed to assign order ${orderId}`);
+              res.status(500).json({ message: "Order accepted but failed to assign riders." });
+            }
+          });
+        });
+      });
+    }
+  );
+});
+
+// Get rider profile by user_id
+app.get("/api/rider/profile", (req, res) => {
+  const { userId } = req.query;
+  if (!userId) return res.status(400).json({ message: "userId required" });
+
+  db.query("SELECT id, user_id, vehicle_type, is_active FROM riders WHERE user_id = ?", [userId], (err, rows) => {
+    if (err) {
+      console.error("Fetch rider profile error:", err);
+      return res.status(500).json({ message: "Database error" });
+    }
+    if (!rows.length) return res.status(404).json({ message: "Rider not found" });
+
+    res.json(rows[0]);
+  });
+});
+
+// Get seller profile by user_id
+app.get("/api/seller/profile", (req, res) => {
+  const { userId } = req.query;
+  if (!userId) return res.status(400).json({ message: "userId required" });
+
+  db.query("SELECT id, user_id, business_name, store_status, current_location FROM sellers WHERE user_id = ?", [userId], (err, rows) => {
+    if (err) {
+      console.error("Fetch seller profile error:", err);
+      return res.status(500).json({ message: "Database error" });
+    }
+    if (!rows.length) return res.status(404).json({ message: "Seller not found" });
+
+    res.json(rows[0]);
+  });
+});
 
 // ---------------- PRICING ----------------
 app.put("/api/products/:id/pricing", (req, res) => {
