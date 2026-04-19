@@ -114,9 +114,19 @@ function Home() {
         const sessionData = {
           role: data.role,
           email,
-          userId: data.user_id || null
+          userId: data.user_id || null,
+          seller_id: data.seller_id || null
         }
         window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(sessionData))
+
+        if (data.role === 'seller') {
+          window.localStorage.setItem('sellerData', JSON.stringify({
+            user_id: data.user_id || null,
+            seller_id: data.seller_id || null,
+            role: data.role,
+            email
+          }))
+        }
 
         setIsLoggedIn(true)
         setUserRole(data.role) // Database verified role set kar rahe hain

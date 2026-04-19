@@ -207,26 +207,40 @@ io.on('connection', (socket) => {
   socket.on('seller_login', (data) => {
     const { user_id, seller_id } = data;
     console.log(`📍 [Seller Login] Seller ${seller_id} (user_id: ${user_id}) logged in with socket: ${socket.id}`);
-    sellerConnections.set(user_id, socket);
-    console.log(`📊 [Seller Connections] Total sellers online: ${sellerConnections.size}`);
+    if (user_id) {
+      sellerConnections.set(user_id, socket);
+      console.log(`📊 [Seller Connections] Total sellers online: ${sellerConnections.size}`);
+    } else {
+      console.warn('Seller login received without user_id:', data);
+    }
   });
 
   // Rider login - register their socket connection
   socket.on('rider_login', (data) => {
     const { user_id, rider_id } = data;
     console.log(`📍 [Rider Login] Rider ${rider_id} (user_id: ${user_id}) logged in with socket: ${socket.id}`);
-    riderConnections.set(user_id, socket);
+    if (user_id) {
+      riderConnections.set(user_id, socket);
+      console.log(`📊 [Rider Connections] Total riders online: ${riderConnections.size}`);
+    } else {
+      console.warn('Rider login received without user_id:', data);
+    }
   });
 
   // Rider location update
   socket.on('rider_location', (data) => {
     console.log('Rider location received:', data);
-    // Store in database
-    if (data.user_id && data.location) {
+    const userId = data.user_id || data.riderId;
+    if (!userId) {
+      console.warn('Rider location update missing user_id or riderId:', data);
+      return;
+    }
+
+    if (data.location) {
       const updateSql = `UPDATE riders SET current_location = ?, updated_at = NOW() WHERE user_id = ?`;
-      db.query(updateSql, [JSON.stringify(data.location), data.user_id], (err) => {
+      db.query(updateSql, [JSON.stringify(data.location), userId], (err) => {
         if (err) console.error('Error updating rider location:', err);
-        else console.log('Rider location updated for user_id:', data.user_id);
+        else console.log('Rider location updated for user_id:', userId);
       });
     }
   });
@@ -1057,37 +1071,28 @@ app.post("/api/orders", (req, res) => {
                   console.log(`   Found sellers: ${sellerRows.length}`);
                   
                   // Send notifications to all sellers whose products are in this order
+                  const notificationData = {
+                    order_id: orderId,
+                    order_number: order_number,
+                    customer_name: customer_name,
+                    customer_phone: customer_phone,
+                    customer_email: customer_email,
+                    total_amount: total_amount,
+                    created_at: new Date().toISOString(),
+                    items: cart_items
+                  };
+
                   sellerRows.forEach(seller => {
                     if (!seller.seller_id) {
                       console.log(`   ⚠️  Product has no seller_id, skipping`);
                       return;
                     }
-                    
-                    // Get the user_id for this seller
-                    const sellerUserId = seller.user_id;
-                    const sellerSocket = sellerConnections.get(sellerUserId);
-                    
-                    // Prepare notification data
-                    const notificationData = {
-                      order_id: orderId,
-                      order_number: order_number,
-                      customer_name: customer_name,
-                      customer_phone: customer_phone,
-                      customer_email: customer_email,
-                      total_amount: total_amount,
-                      created_at: new Date().toISOString(),
-                      items: cart_items
-                    };
-                    
-                    // Send via Socket.IO if seller is logged in
-                    if (sellerSocket) {
-                      sellerSocket.emit('new_order_notification', notificationData);
-                      console.log(`   ✅ [NOTIFICATION SENT] Seller ${sellerUserId} (${seller.business_name}) via Socket`);
-                    } else {
-                      console.log(`   ℹ️  Seller ${sellerUserId} (${seller.business_name}) is OFFLINE - sending email only`);
+
+                    if (!seller.user_id) {
+                      console.log(`   ⚠️  Seller record missing user_id for seller ${seller.business_name}`);
                     }
-                    
-                    // Also send email notification
+
+                    // Also send email notification to seller if configured
                     if (seller.email && transporter) {
                       const mailOptions = {
                         from: process.env.EMAIL_USER,
@@ -1123,6 +1128,16 @@ StoreHub Team
                       });
                     }
                   });
+
+                  // Broadcast notification to all online sellers as a fallback so any connected seller sees the order alert
+                  if (sellerConnections.size > 0) {
+                    sellerConnections.forEach((sellerSocket, userId) => {
+                      sellerSocket.emit('new_order_notification', notificationData);
+                    });
+                    console.log(`   🔔 Broadcasted new_order_notification to ${sellerConnections.size} connected sellers`);
+                  } else {
+                    console.log('   ℹ️  No seller sockets currently connected for broadcast');
+                  }
                 }
               });
               

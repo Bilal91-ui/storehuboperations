@@ -1,5 +1,6 @@
 // SellerDashboard.jsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { io } from 'socket.io-client';
 
 // --- Import External Modules ---
 import ManageProduct from './ManageProduct';
@@ -15,6 +16,55 @@ import './sellerDashboard.css';
 
 const SellerDashboard = ({ onLogout }) => {
   const [activeTab, setActiveTab] = useState('analytics');
+  const [newOrderAlert, setNewOrderAlert] = useState(null);
+
+  useEffect(() => {
+    const getSessionData = () => {
+      const saved = localStorage.getItem('sellerData') || localStorage.getItem('storehubOperationsSession');
+      if (!saved) return null;
+      try {
+        return JSON.parse(saved);
+      } catch (err) {
+        console.warn('Invalid seller session data', err);
+        return null;
+      }
+    };
+
+    const session = getSessionData();
+    console.log('Seller dashboard session data:', session);
+    if (!session) {
+      console.log('No seller session found, socket not connecting');
+      return;
+    }
+
+    const socket = io('http://localhost:5000');
+
+    socket.on('connect', () => {
+      console.log('Seller socket connected', socket.id);
+      const { user_id, userId, seller_id, sellerId } = session;
+      console.log('Sending seller_login with:', { user_id: user_id || userId, seller_id: seller_id || sellerId });
+      socket.emit('seller_login', {
+        user_id: user_id || userId,
+        seller_id: seller_id || sellerId
+      });
+    });
+
+    socket.on('new_order_notification', (notificationData) => {
+      console.log('Seller received new order notification:', notificationData);
+      setNewOrderAlert(notificationData);
+      setTimeout(() => setNewOrderAlert(null), 8000);
+    });
+
+    socket.on('connect_error', (err) => {
+      console.error('Seller socket connect error:', err);
+    });
+
+    socket.on('disconnect', () => {
+      console.log('Seller socket disconnected');
+    });
+
+    return () => socket.disconnect();
+  }, []);
 
   // --- Render Logic ---
   const renderContent = () => {
@@ -95,6 +145,11 @@ const SellerDashboard = ({ onLogout }) => {
         </header>
         
         <div className="content-wrapper">
+          {newOrderAlert && (
+            <div className="order-alert-banner">
+              <strong>New Order Alert:</strong> Order #{newOrderAlert.order_number || newOrderAlert.order_id} from {newOrderAlert.customer_name || 'a customer'}.
+            </div>
+          )}
           {renderContent()}
         </div>
       </main>

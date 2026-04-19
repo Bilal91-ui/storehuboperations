@@ -22,13 +22,26 @@ const VendorOrders = () => {
       reconnectionAttempts: 5
     });
 
+    const getSellerSession = () => {
+      const saved = localStorage.getItem('sellerData') || localStorage.getItem('storehubOperationsSession');
+      if (!saved) return null;
+      try {
+        return JSON.parse(saved);
+      } catch (err) {
+        console.warn('Invalid seller session data', err);
+        return null;
+      }
+    };
+
     socketInstance.on('connect', () => {
       console.log('✅ Connected to server');
-      // Notify server that a seller has logged in
-      const sellerData = localStorage.getItem('sellerData');
+      const sellerData = getSellerSession();
       if (sellerData) {
-        const { user_id, seller_id } = JSON.parse(sellerData);
-        socketInstance.emit('seller_login', { user_id, seller_id });
+        const { user_id, seller_id, userId } = sellerData;
+        socketInstance.emit('seller_login', {
+          user_id: user_id || userId,
+          seller_id
+        });
       }
     });
 
@@ -133,7 +146,8 @@ const VendorOrders = () => {
 
   // Helper to render buttons based on status
   const renderActionButtons = (order) => {
-    switch (order.status) {
+    const status = order.status || 'pending';
+    switch (status) {
       case 'Pending':
         return (
           <>
@@ -189,10 +203,10 @@ const VendorOrders = () => {
                 <strong>Customer:</strong> {newOrderAlert.customer_name} ({newOrderAlert.customer_phone})
               </p>
               <p style={{ margin: '5px 0', fontSize: '14px' }}>
-                <strong>Total Amount:</strong> PKR {newOrderAlert.total_amount.toFixed(2)}
+                <strong>Total Amount:</strong> PKR {(newOrderAlert.total_amount || 0).toFixed(2)}
               </p>
               <p style={{ margin: '5px 0', fontSize: '14px' }}>
-                <strong>Payment Method:</strong> {newOrderAlert.payment_method.toUpperCase()}
+                <strong>Payment Method:</strong> {(newOrderAlert.payment_method || 'cod').toUpperCase()}
               </p>
               <p style={{ margin: '5px 0', fontSize: '13px', color: '#ddd' }}>
                 {new Date(newOrderAlert.created_at).toLocaleString()}
@@ -245,13 +259,14 @@ const VendorOrders = () => {
         <tbody>
           {orders.map(order => {
             const totalAmount = typeof order.total === 'number' ? order.total : parseFloat(order.total) || 0;
+            const orderStatus = order.status || 'pending';
             return (
               <tr key={order.id}>
                 <td>#{order.id}</td>
                 <td>{order.date}</td>
                 <td>{order.customer}</td>
                 <td>PKR {totalAmount.toFixed(2)}</td>
-                <td><span className={`badge badge-${order.status.toLowerCase()}`}>{order.status}</span></td>
+                <td><span className={`badge badge-${orderStatus.toLowerCase()}`}>{orderStatus}</span></td>
                 <td>
                   <button className="action-btn" onClick={() => setSelectedOrder(order)}>View Details</button>
                 </td>
@@ -267,7 +282,7 @@ const VendorOrders = () => {
           <div className="modal-content" style={{ width: '600px', textAlign: 'left' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
               <h3>Order Details #{selectedOrder.id}</h3>
-              <span className={`badge badge-${selectedOrder.status.toLowerCase()}`} style={{ alignSelf: 'center' }}>{selectedOrder.status}</span>
+              <span className={`badge badge-${(selectedOrder.status || 'pending').toLowerCase()}`} style={{ alignSelf: 'center' }}>{selectedOrder.status || 'pending'}</span>
             </div>
 
             <div className="order-details-grid">

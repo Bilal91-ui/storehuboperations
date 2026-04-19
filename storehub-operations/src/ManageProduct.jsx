@@ -96,9 +96,20 @@ const ManageProduct = () => {
         data.append("image", formData.image);
       }
 
-      const sellerData = localStorage.getItem('sellerData');
+      const getSellerSession = () => {
+        const saved = localStorage.getItem('sellerData') || localStorage.getItem('storehubOperationsSession');
+        if (!saved) return null;
+        try {
+          return JSON.parse(saved);
+        } catch (err) {
+          console.warn('Invalid seller session data', err);
+          return null;
+        }
+      };
+
+      const sellerData = getSellerSession();
       if (sellerData) {
-        const { seller_id } = JSON.parse(sellerData);
+        const seller_id = sellerData.seller_id || sellerData.sellerId;
         if (seller_id) data.append('seller_id', seller_id);
       }
 

@@ -105,21 +105,63 @@ const RiderDashboard = ({ onLogout }) => {
     const newSocket = io('http://localhost:5000');
     setSocket(newSocket);
 
+    const getSessionData = () => {
+      const saved = localStorage.getItem('sellerData') || localStorage.getItem('storehubOperationsSession');
+      if (!saved) return null;
+      try {
+        return JSON.parse(saved);
+      } catch (parseError) {
+        console.warn('Unable to parse login data from localStorage:', parseError);
+        return null;
+      }
+    };
+
+    newSocket.on('connect', () => {
+      console.log('Rider socket connected:', newSocket.id);
+      const riderData = getSessionData();
+      if (riderData) {
+        const { user_id, id, userId, seller_id } = riderData;
+        newSocket.emit('rider_login', {
+          user_id: user_id || userId || id,
+          rider_id: seller_id || userId || id
+        });
+      }
+    });
+
+    newSocket.on('rider_order_assigned', (data) => {
+      console.log('Rider assignment event received:', data);
+      alert('A rider order assignment was received. Check the dashboard for details.');
+    });
+
     // Get initial location
     if (navigator.geolocation) {
+      const sendLocation = (loc) => {
+        const saved = localStorage.getItem('sellerData') || localStorage.getItem('storehubOperationsSession');
+        let userId = null;
+        if (saved) {
+          try {
+            const riderData = JSON.parse(saved);
+            userId = riderData.user_id || riderData.userId || riderData.id;
+          } catch (err) {
+            console.warn('Unable to parse user data for location update:', err);
+          }
+        }
+
+        newSocket.emit('rider_location', {
+          user_id: userId,
+          riderId: userId || 'rider123',
+          location: loc,
+          timestamp: new Date().toISOString()
+        });
+      };
+
       navigator.geolocation.getCurrentPosition(
         (position) => {
           const { latitude, longitude } = position.coords;
           const loc = { lat: latitude, lng: longitude };
           setLocation(loc);
           setLocationError(null);
-          
-          // Send location to backend
-          newSocket.emit('rider_location', {
-            riderId: 'rider123', // You might want to get this from auth
-            location: loc,
-            timestamp: new Date().toISOString()
-          });
+          sendLocation(loc);
         },
         (error) => {
           console.error('Error getting location:', error);
@@ -133,13 +175,7 @@ const RiderDashboard = ({ onLogout }) => {
           const { latitude, longitude } = position.coords;
           const loc = { lat: latitude, lng: longitude };
           setLocation(loc);
-          
-          // Send updated location
-          newSocket.emit('rider_location', {
-            riderId: 'rider123',
-            location: loc,
-            timestamp: new Date().toISOString()
-          });
+          sendLocation(loc);
         },
         (error) => {
           console.error('Error watching position:', error);
