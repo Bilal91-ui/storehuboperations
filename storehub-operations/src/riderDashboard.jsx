@@ -1,11 +1,19 @@
 // RiderDashboard.jsx
 import React, { useState, useEffect } from 'react';
 import './riderDashboard.css';
-//new code
 import axios from 'axios';
 import { io } from 'socket.io-client';
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 
-const socket = io('http://localhost:5000'); // Your backend URL
+// Fix for default markers in react-leaflet
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: require('leaflet/dist/images/marker-icon-2x.png'),
+  iconUrl: require('leaflet/dist/images/marker-icon.png'),
+  shadowUrl: require('leaflet/dist/images/marker-shadow.png'),
+});
 
 const RiderDashboard = ({ onLogout }) => {
   // --- GLOBAL STATE ---
@@ -75,6 +83,11 @@ const riderId = localStorage.getItem("user_id"); // Get logged in rider ID
   const [progress, setProgress] = useState(0); 
   const [enteredOtp, setEnteredOtp] = useState('');
 
+  // --- SOCKET AND LOCATION ---
+  const [socket, setSocket] = useState(null);
+  const [location, setLocation] = useState(null);
+  const [locationError, setLocationError] = useState(null);
+
   // --- HANDLERS: TASKS ---
   const handleViewDetails = (task) => setSelectedTask(task);
   const handleCloseModal = () => { setSelectedTask(null); setSelectedTxn(null); };
@@ -129,6 +142,100 @@ const riderId = localStorage.getItem("user_id"); // Get logged in rider ID
     }
     return () => clearInterval(interval);
   }, [navStatus, deliveryStatus]);
+
+  // --- SOCKET AND LOCATION SETUP ---
+  useEffect(() => {
+    // Connect to Socket.IO
+    const newSocket = io('http://localhost:5000');
+    setSocket(newSocket);
+
+    const getSessionData = () => {
+      const saved = localStorage.getItem('sellerData') || localStorage.getItem('storehubOperationsSession');
+      if (!saved) return null;
+      try {
+        return JSON.parse(saved);
+      } catch (parseError) {
+        console.warn('Unable to parse login data from localStorage:', parseError);
+        return null;
+      }
+    };
+
+    newSocket.on('connect', () => {
+      console.log('Rider socket connected:', newSocket.id);
+      const riderData = getSessionData();
+      if (riderData) {
+        const { user_id, id, userId, seller_id } = riderData;
+        newSocket.emit('rider_login', {
+          user_id: user_id || userId || id,
+          rider_id: seller_id || userId || id
+        });
+      }
+    });
+
+    newSocket.on('rider_order_assigned', (data) => {
+      console.log('Rider assignment event received:', data);
+      alert('A rider order assignment was received. Check the dashboard for details.');
+    });
+
+    // Get initial location
+    if (navigator.geolocation) {
+      const sendLocation = (loc) => {
+        const saved = localStorage.getItem('sellerData') || localStorage.getItem('storehubOperationsSession');
+        let userId = null;
+        if (saved) {
+          try {
+            const riderData = JSON.parse(saved);
+            userId = riderData.user_id || riderData.userId || riderData.id;
+          } catch (err) {
+            console.warn('Unable to parse user data for location update:', err);
+          }
+        }
+
+        newSocket.emit('rider_location', {
+          user_id: userId,
+          riderId: userId || 'rider123',
+          location: loc,
+          timestamp: new Date().toISOString()
+        });
+      };
+
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          const loc = { lat: latitude, lng: longitude };
+          setLocation(loc);
+          setLocationError(null);
+          sendLocation(loc);
+        },
+        (error) => {
+          console.error('Error getting location:', error);
+          setLocationError('Unable to get location. Please enable location services.');
+        }
+      );
+
+      // Watch position for real-time updates
+      const watchId = navigator.geolocation.watchPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          const loc = { lat: latitude, lng: longitude };
+          setLocation(loc);
+          sendLocation(loc);
+        },
+        (error) => {
+          console.error('Error watching position:', error);
+        },
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+      );
+
+      // Cleanup
+      return () => {
+        newSocket.disconnect();
+        navigator.geolocation.clearWatch(watchId);
+      };
+    } else {
+      setLocationError('Geolocation is not supported by this browser.');
+    }
+  }, []);
 
   const handleStatusUpdate = (newStatus) => {
     setDeliveryStatus(newStatus);
@@ -312,9 +419,9 @@ const riderId = localStorage.getItem("user_id"); // Get logged in rider ID
 
         {/* Summary (Req 3) */}
         <div className="stats-grid">
-          <div className="stat-card"><div className="stat-title">Total Earnings</div><div className="stat-value" style={{color:'#10b981'}}>${totalEarnings.toFixed(2)}</div></div>
+          <div className="stat-card"><div className="stat-title">Total Earnings</div><div className="stat-value" style={{color:'#10b981'}}>PKR {totalEarnings.toFixed(2)}</div></div>
           <div className="stat-card"><div className="stat-title">Completed Orders</div><div className="stat-value">{filteredData.length}</div></div>
-          <div className="stat-card"><div className="stat-title">COD Collected</div><div className="stat-value" style={{color:'#f59e0b'}}>${totalCod.toFixed(2)}</div></div>
+          <div className="stat-card"><div className="stat-title">COD Collected</div><div className="stat-value" style={{color:'#f59e0b'}}>PKR {totalCod.toFixed(2)}</div></div>
         </div>
 
         {/* List (Req 5 & 6) */}
@@ -335,11 +442,11 @@ const riderId = localStorage.getItem("user_id"); // Get logged in rider ID
                   <td>
                     {item.type === 'Payout' ? (
                       <div className="breakdown-cell">
-                        <span className="text-base">Base: ${item.base.toFixed(2)}</span>
-                        {item.bonus > 0 && <span className="text-bonus">+ Bonus: ${item.bonus.toFixed(2)}</span>}
+                        <span className="text-base">Base: PKR {item.base.toFixed(2)}</span>
+                        {item.bonus > 0 && <span className="text-bonus">+ Bonus: PKR {item.bonus.toFixed(2)}</span>}
                       </div>
                     ) : (
-                      <span className="text-cod">COD: ${item.cod.toFixed(2)}</span>
+                      <span className="text-cod">COD: PKR {item.cod.toFixed(2)}</span>
                     )}
                   </td>
                   <td>
@@ -386,6 +493,47 @@ const riderId = localStorage.getItem("user_id"); // Get logged in rider ID
     </div>
   );
 
+  const renderLocation = () => (
+    <div>
+      <h3 className="section-title">My Location</h3>
+      {locationError ? (
+        <div className="empty-state">
+          <h3>Location Error</h3>
+          <p>{locationError}</p>
+        </div>
+      ) : location ? (
+        <div>
+          <div style={{ marginBottom: '20px', padding: '15px', background: '#f8f9fa', borderRadius: '8px' }}>
+            <h4>Current Location</h4>
+            <p>Latitude: {location.lat.toFixed(6)}</p>
+            <p>Longitude: {location.lng.toFixed(6)}</p>
+            <p>Last updated: {new Date().toLocaleTimeString()}</p>
+          </div>
+          <div style={{ height: '400px', width: '100%', borderRadius: '8px', overflow: 'hidden' }}>
+            <MapContainer center={[location.lat, location.lng]} zoom={15} style={{ height: '100%', width: '100%' }}>
+              <TileLayer
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              />
+              <Marker position={[location.lat, location.lng]}>
+                <Popup>
+                  You are here!<br />
+                  Lat: {location.lat.toFixed(6)}<br />
+                  Lng: {location.lng.toFixed(6)}
+                </Popup>
+              </Marker>
+            </MapContainer>
+          </div>
+        </div>
+      ) : (
+        <div className="empty-state">
+          <h3>Getting Location...</h3>
+          <p>Please allow location access to track your position.</p>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="rider-layout">
       <aside className="rider-sidebar">
@@ -393,6 +541,7 @@ const riderId = localStorage.getItem("user_id"); // Get logged in rider ID
         <nav className="sidebar-menu">
           <button className={`menu-item ${activeTab === 'new' ? 'active' : ''}`} onClick={() => setActiveTab('new')}>📦 Available Tasks</button>
           <button className={`menu-item ${activeTab === 'active' ? 'active' : ''}`} onClick={() => setActiveTab('active')}>🚀 Current Deliveries</button>
+          <button className={`menu-item ${activeTab === 'location' ? 'active' : ''}`} onClick={() => setActiveTab('location')}>📍 My Location</button>
           <button className={`menu-item ${activeTab === 'earnings' ? 'active' : ''}`} onClick={() => setActiveTab('earnings')}>💰 Earnings & History</button>
           <button className={`menu-item ${activeTab === 'availability' ? 'active' : ''}`} onClick={() => setActiveTab('availability')}>📅 Availability</button>
         </nav>
@@ -411,7 +560,7 @@ const riderId = localStorage.getItem("user_id"); // Get logged in rider ID
           {!isOnline && activeTab !== 'availability' ? (
             <div className="empty-state"><h3>You are Offline</h3><p>Go to Availability tab or toggle status to start.</p><button className="btn btn-primary" style={{marginTop:'15px', width:'auto'}} onClick={() => setActiveTab('availability')}>Go to Availability</button></div>
           ) : (
-            activeTab === 'new' ? renderNewTasks() : activeTab === 'active' ? renderActiveDelivery() : activeTab === 'earnings' ? renderEarnings() : renderAvailability()
+            activeTab === 'new' ? renderNewTasks() : activeTab === 'active' ? renderActiveDelivery() : activeTab === 'location' ? renderLocation() : activeTab === 'earnings' ? renderEarnings() : renderAvailability()
           )}
         </div>
       </main>
@@ -448,14 +597,14 @@ const riderId = localStorage.getItem("user_id"); // Get logged in rider ID
             
             {selectedTxn.type === 'Payout' ? (
               <>
-                <div className="txn-row"><span className="txn-label">Base Fare</span><span className="txn-val">${selectedTxn.base.toFixed(2)}</span></div>
-                <div className="txn-row"><span className="txn-label">Surge/Bonus</span><span className="txn-val" style={{color:'#10b981'}}>+ ${selectedTxn.bonus.toFixed(2)}</span></div>
-                <div className="txn-total"><span>Total Payout</span><span>${(selectedTxn.base + selectedTxn.bonus).toFixed(2)}</span></div>
+                <div className="txn-row"><span className="txn-label">Base Fare</span><span className="txn-val">PKR {selectedTxn.base.toFixed(2)}</span></div>
+                <div className="txn-row"><span className="txn-label">Surge/Bonus</span><span className="txn-val" style={{color:'#10b981'}}>+ PKR {selectedTxn.bonus.toFixed(2)}</span></div>
+                <div className="txn-total"><span>Total Payout</span><span>PKR {(selectedTxn.base + selectedTxn.bonus).toFixed(2)}</span></div>
               </>
             ) : (
               <>
-                 <div className="txn-row"><span className="txn-label">Cash Collected</span><span className="txn-val">${selectedTxn.cod.toFixed(2)}</span></div>
-                 <div className="txn-total" style={{color:'#f59e0b'}}><span>Amount Owed</span><span>-${selectedTxn.cod.toFixed(2)}</span></div>
+                 <div className="txn-row"><span className="txn-label">Cash Collected</span><span className="txn-val">PKR {selectedTxn.cod.toFixed(2)}</span></div>
+                 <div className="txn-total" style={{color:'#f59e0b'}}><span>Amount Owed</span><span>- PKR {selectedTxn.cod.toFixed(2)}</span></div>
               </>
             )}
             

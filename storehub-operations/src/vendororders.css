@@ -66,6 +66,72 @@
     border-bottom: none;
 }
 
+.order-item-detail {
+    display: grid;
+    grid-template-columns: 80px 1fr auto;
+    gap: 12px;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid #eee;
+}
+
+.order-item-detail:last-child {
+    border-bottom: none;
+}
+
+.item-image-wrapper {
+    width: 80px;
+    height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #fff;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid #ddd;
+}
+
+.order-item-image {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.order-item-image.placeholder {
+    color: #999;
+    font-size: 0.75rem;
+    text-align: center;
+    padding: 6px;
+}
+
+.item-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.item-name {
+    font-weight: 600;
+    color: #333;
+}
+
+.item-description {
+    color: #666;
+    font-size: 0.85rem;
+}
+
+.item-meta {
+    font-size: 0.85rem;
+    color: #444;
+}
+
+.item-total {
+    font-weight: 700;
+    color: #333;
+    white-space: nowrap;
+}
+
 .modal-actions {
     display: flex;
     gap: 10px;

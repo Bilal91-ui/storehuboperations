@@ -18,7 +18,7 @@ function Login({ onClose, onSwitchToSignup, onLoginSuccess }) {
     setError("")
   }
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
 
     // Basic validation
@@ -27,14 +27,42 @@ function Login({ onClose, onSwitchToSignup, onLoginSuccess }) {
       return
     }
 
-    // Simulate login (in real app, this would call an API)
-    const userData = {
-      email: formData.email,
-      name: formData.email.split("@")[0],
-      role: "customer", // Default role for demo
-    }
+    try {
+      // Call backend API for authentication
+      const response = await fetch('http://localhost:5000/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: formData.email,
+          password: formData.password
+        })
+      })
 
-    onLoginSuccess(userData)
+      const data = await response.json()
+
+      if (!response.ok) {
+        setError(data.message || "Login failed")
+        return
+      }
+
+      // Store user and seller info in localStorage for Socket.IO connection
+      const userData = {
+        id: data.user_id,
+        user_id: data.user_id,
+        seller_id: data.seller_id,
+        email: data.email,
+        name: data.full_name,
+        role: data.role || "seller",
+      }
+
+      localStorage.setItem('sellerData', JSON.stringify(userData))
+      localStorage.setItem('authToken', data.token || '')
+      
+      onLoginSuccess(userData)
+    } catch (error) {
+      console.error("Login error:", error)
+      setError("An error occurred during login")
+    }
   }
 
   return (

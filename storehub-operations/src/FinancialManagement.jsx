@@ -135,8 +135,8 @@ const FinancialManagement = () => {
                 <td><strong>{t.id}</strong></td>
                 <td>{t.date}</td>
                 <td>{t.vendor}</td>
-                <td className="amount-inc">${t.amount.toFixed(2)}</td>
-                <td className="amount-out">${t.commission.toFixed(2)}</td>
+                <td className="amount-inc">PKR {t.amount.toFixed(2)}</td>
+                <td className="amount-out">PKR {t.commission.toFixed(2)}</td>
                 <td>
                   <span className={`badge ${t.status === 'Verified' ? 'badge-success' : 'badge-warning'}`}>
                     {t.status}
