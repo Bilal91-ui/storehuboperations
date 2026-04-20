@@ -12,7 +12,6 @@ const path = require("path");
 const bcrypt = require("bcrypt");
 const nodemailer = require("nodemailer");
 const { createServer } = require("http");
-const { Server } = require("socket.io");
 
 console.log("Loaded NODE_ENV:", process.env.NODE_ENV);
 console.log("All env vars starting with NODE:", Object.keys(process.env).filter(key => key.startsWith('NODE')));
@@ -33,15 +32,7 @@ app.use(cors());
 app.use(express.json());
 
 // Create HTTP server
-const server = createServer(app);
-
 // Initialize Socket.IO
-const io = new Server(server, {
-  cors: {
-    origin: "*", // Allow all origins for now, adjust as needed
-    methods: ["GET", "POST"]
-  }
-});
 
 // ================= EMAIL SERVICE =================
 const transporter = nodemailer.createTransport({
@@ -1064,7 +1055,6 @@ app.post("/api/orders", (req, res) => {
           const finalizeOrder = () => {
             db.commit((err) => {
               if (err) return db.rollback(() => res.status(500).json({ message: "Database error" }));
-<<<<<<< HEAD
               //new code
               const newOrderTask = {
                 id: orderId,
@@ -1079,8 +1069,6 @@ app.post("/api/orders", (req, res) => {
               };
               io.emit("new_order_available", newOrderTask); 
               // ------------------------------------
-
-=======
               
               // Fetch sellers for products in this order to send notifications
               const productIds = cart_items.map(item => item.product_id || item.id);
@@ -1173,7 +1161,6 @@ StoreHub Team
                 }
               });
               
->>>>>>> e5a3eebcc548fe45c232f9240c93c42fb42de777
               res.json({
                 message: "Order created successfully",
                 order_id: orderId,
