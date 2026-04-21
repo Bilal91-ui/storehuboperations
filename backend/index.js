@@ -11,8 +11,6 @@ const multer = require("multer");
 const path = require("path");
 const bcrypt = require("bcrypt");
 const nodemailer = require("nodemailer");
-const { createServer } = require("http");
-const { Server } = require("socket.io");
 
 console.log("Loaded NODE_ENV:", process.env.NODE_ENV);
 console.log("All env vars starting with NODE:", Object.keys(process.env).filter(key => key.startsWith('NODE')));
@@ -31,17 +29,6 @@ io.on("connection", (socket) => {
 });
 app.use(cors());
 app.use(express.json());
-
-// Create HTTP server
-const server = createServer(app);
-
-// Initialize Socket.IO
-const io = new Server(server, {
-  cors: {
-    origin: "*", // Allow all origins for now, adjust as needed
-    methods: ["GET", "POST"]
-  }
-});
 
 // ================= EMAIL SERVICE =================
 const transporter = nodemailer.createTransport({
@@ -86,228 +73,6 @@ async function sendOrderStatusEmail(order, status) {
     console.error("[ERROR] Failed to send order status email:", mailErr.message);
   }
 }
-
-// ================= HELPER FUNCTIONS =================
-
-// Calculate distance between two points using Haversine formula
-function calculateDistance(lat1, lng1, lat2, lng2) {
-  const R = 6371; // Earth's radius in km
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLng = (lng2 - lng1) * Math.PI / 180;
-  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLng/2) * Math.sin(dLng/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  return R * c;
-}
-
-// Find riders within specified radius of a location
-function findNearbyRiders(centerLocation, radiusKm, callback) {
-  const { lat, lng } = centerLocation;
-
-  // Get all active riders with locations
-  const sql = `
-    SELECT r.id, r.user_id, r.current_location, u.full_name
-    FROM riders r
-    JOIN users u ON r.user_id = u.id
-    WHERE r.is_active = TRUE AND r.current_location IS NOT NULL
-  `;
-
-  db.query(sql, (err, riders) => {
-    if (err) {
-      console.error('Error fetching riders:', err);
-      return callback([]);
-    }
-
-    const nearbyRiders = [];
-
-    riders.forEach(rider => {
-      try {
-        let riderLocation = rider.current_location;
-        // Handle both JSON string and parsed object
-        if (typeof riderLocation === 'string') {
-          riderLocation = JSON.parse(riderLocation);
-        }
-        const distance = calculateDistance(lat, lng, riderLocation.lat, riderLocation.lng);
-
-        if (distance <= radiusKm) {
-          nearbyRiders.push({
-            id: rider.id,
-            user_id: rider.user_id,
-            name: rider.full_name,
-            location: riderLocation,
-            distance: distance
-          });
-        }
-      } catch (parseErr) {
-        console.error('Error parsing rider location for rider', rider.id, ':', parseErr);
-      }
-    });
-
-    // Sort by distance (closest first)
-    nearbyRiders.sort((a, b) => a.distance - b.distance);
-
-    console.log(`Found ${nearbyRiders.length} riders within ${radiusKm}km`);
-    callback(nearbyRiders);
-  });
-}
-
-// Assign order to riders sequentially
-function assignOrderToRiders(orderId, riders, callback) {
-  if (riders.length === 0) {
-    console.log('No riders available nearby');
-    return callback(false);
-  }
-
-  console.log(`Found ${riders.length} riders within range. Notifying closest rider: ${riders[0].name} (${riders[0].distance.toFixed(1)}km)`);
-
-  // For testing: just assign to the first rider immediately
-  assignOrderToRider(orderId, riders[0].id, (success) => {
-    if (success) {
-      console.log(`Order ${orderId} assigned to rider ${riders[0].name}`);
-      callback(true);
-    } else {
-      console.log('Failed to assign order to rider');
-      callback(false);
-    }
-  });
-
-  // TODO: Implement proper sequential notification system
-  // Send notification to first rider
-  // io.emit('rider_order_notification', {
-  //   orderId: orderId,
-  //   riderId: riders[0].id,
-  //   riderUserId: riders[0].user_id,
-  //   message: `New order available (${riders[0].distance.toFixed(1)}km away)`
-  // });
-}
-
-// Actually assign order to a specific rider
-function assignOrderToRider(orderId, riderId, callback) {
-  db.query(
-    "UPDATE orders SET rider_id = ?, rider_assignment_status = 'assigned' WHERE id = ? AND rider_id IS NULL",
-    [riderId, orderId],
-    (err, result) => {
-      if (err) {
-        console.error('Error assigning rider:', err);
-        return callback(false);
-      }
-
-      if (result.affectedRows > 0) {
-        console.log(`Order ${orderId} assigned to rider ${riderId}`);
-        // Notify the rider that they got the order
-        console.log(`Emitting rider_order_assigned to all clients:`, { orderId, riderId });
-        io.emit('rider_order_assigned', {
-          orderId: orderId,
-          riderId: riderId
-        });
-        callback(true);
-      } else {
-        console.log(`Order ${orderId} already assigned or not found`);
-        callback(false);
-      }
-    }
-  );
-}
-
-// ================= SOCKET.IO HANDLERS =================
-// Map to track seller user_id to socket connections
-const sellerConnections = new Map(); // seller_user_id -> socket object
-const riderConnections = new Map();  // rider_user_id -> socket object
-
-io.on('connection', (socket) => {
-  console.log('🔌 [Socket] User connected:', socket.id);
-
-  // Seller login - register their socket connection
-  socket.on('seller_login', (data) => {
-    const { user_id, seller_id } = data;
-    console.log(`📍 [Seller Login] Seller ${seller_id} (user_id: ${user_id}) logged in with socket: ${socket.id}`);
-    if (user_id) {
-      sellerConnections.set(user_id, socket);
-      console.log(`📊 [Seller Connections] Total sellers online: ${sellerConnections.size}`);
-    } else {
-      console.warn('Seller login received without user_id:', data);
-    }
-  });
-
-  // Rider login - register their socket connection
-  socket.on('rider_login', (data) => {
-    const { user_id, rider_id } = data;
-    console.log(`📍 [Rider Login] Rider ${rider_id} (user_id: ${user_id}) logged in with socket: ${socket.id}`);
-    if (user_id) {
-      riderConnections.set(user_id, socket);
-      console.log(`📊 [Rider Connections] Total riders online: ${riderConnections.size}`);
-    } else {
-      console.warn('Rider login received without user_id:', data);
-    }
-  });
-
-  // Rider location update
-  socket.on('rider_location', (data) => {
-    console.log('Rider location received:', data);
-    const userId = data.user_id || data.riderId;
-    if (!userId) {
-      console.warn('Rider location update missing user_id or riderId:', data);
-      return;
-    }
-
-    if (data.location) {
-      const updateSql = `UPDATE riders SET current_location = ?, updated_at = NOW() WHERE user_id = ?`;
-      db.query(updateSql, [JSON.stringify(data.location), userId], (err) => {
-        if (err) console.error('Error updating rider location:', err);
-        else console.log('Rider location updated for user_id:', userId);
-      });
-    }
-  });
-
-  // Seller location update
-  socket.on('seller_location', (data) => {
-    console.log('Seller location received:', data);
-    // Store in database
-    if (data.user_id && data.location) {
-      const updateSql = `UPDATE sellers SET current_location = ?, updated_at = NOW() WHERE user_id = ?`;
-      db.query(updateSql, [JSON.stringify(data.location), data.user_id], (err) => {
-        if (err) console.error('Error updating seller location:', err);
-        else console.log('Seller location updated for user_id:', data.user_id);
-      });
-    }
-  });
-
-  // Rider order response
-  socket.on('rider_order_response', (data) => {
-    console.log('Rider order response:', data);
-    const { orderId, riderId, accepted } = data;
-
-    if (accepted) {
-      assignOrderToRider(orderId, riderId, (success) => {
-        if (success) {
-          // Notify other riders that order is taken
-          io.emit('order_taken', { orderId });
-        }
-      });
-    } else {
-      // Rider rejected, this will be handled in assignOrderToRiders
-      console.log(`Rider ${riderId} rejected order ${orderId}`);
-    }
-  });
-
-  socket.on('disconnect', () => {
-    console.log('❌ [Socket Disconnect] User disconnected:', socket.id);
-    // Remove from seller and rider connections
-    for (let [userId, userSocket] of sellerConnections.entries()) {
-      if (userSocket.id === socket.id) {
-        sellerConnections.delete(userId);
-        console.log(`📍 [Seller Disconnected] Seller user_id ${userId} disconnected, remaining: ${sellerConnections.size}`);
-      }
-    }
-    for (let [userId, userSocket] of riderConnections.entries()) {
-      if (userSocket.id === socket.id) {
-        riderConnections.delete(userId);
-        console.log(`📍 [Rider Disconnected] Rider user_id ${userId} disconnected`);
-      }
-    }
-  });
-});
 
 // serve uploads
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
@@ -491,10 +256,9 @@ app.post("/api/auth/login", async (req, res) => {
 
   // 2. NORMAL USER/PARTNER LOGIN
   db.query(
-    `SELECT u.*, r.role_name, s.id AS seller_id 
+    `SELECT u.*, r.role_name 
      FROM users u 
      JOIN roles r ON u.role_id = r.id 
-     LEFT JOIN sellers s ON u.id = s.user_id
      WHERE u.email = ?`,
     [email],
     async (err, rows) => {
@@ -513,8 +277,7 @@ app.post("/api/auth/login", async (req, res) => {
         message: "Login success",
         user_id: user.id,
         role_id: user.role_id,
-        role: user.role_name,
-        seller_id: user.seller_id || null
+        role: user.role_name // <-- Asal DB role frontend ko bhejein
       });
     }
   );
@@ -522,25 +285,22 @@ app.post("/api/auth/login", async (req, res) => {
 
 // ---------------- PRODUCTS ----------------
 app.post("/api/products", upload.single("image"), (req, res) => {
-  const { name, price, stock, category, description, seller_id } = req.body;
+  const { name, price, stock, category, description } = req.body;
   const imagePath = req.file ? `/uploads/${req.file.filename}` : null;
-
-  console.log("[DEBUG] POST /api/products received:", { name, price, stock, category, description, seller_id });
 
   if (!name || !price || price <= 0 || !stock || stock < 0) {
     return res.status(400).json({ message: "Invalid product data: name, positive price, and non-negative stock required" });
   }
 
   const sql = `
-    INSERT INTO products (seller_id, name, price, stock, category, description, image, basePrice)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO products (name, price, stock, category, description, image, basePrice)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `;
-  db.query(sql,[seller_id || null, name, price, stock, category || null, description || null, imagePath, price], (err, result) => {
+  db.query(sql,[name, price, stock, category || null, description || null, imagePath, price], (err, result) => {
     if (err) {
       console.error("Insert product error:", err);
       return res.status(500).json({ message: "Database error" });
     }
-    console.log(`[SUCCESS] Product added with seller_id:${seller_id}, product_id:${result.insertId}`);
     res.json({ message: "Product added", id: result.insertId });
   });
 });
@@ -557,16 +317,15 @@ app.get("/api/products", (req, res) => {
 
 app.put("/api/products/:id", upload.single("image"), (req, res) => {
   const { id } = req.params;
-  const { name, price, stock, category, description, image, seller_id } = req.body;
+  const { name, price, stock, category, description, image } = req.body;
   const imagePath = req.file ? `/uploads/${req.file.filename}` : image || null;
-  const sellerValue = seller_id === undefined ? null : seller_id;
 
   const sql = `
     UPDATE products 
-    SET seller_id = COALESCE(?, seller_id), name = ?, price = ?, stock = ?, category = ?, description = ?, image = ?
+    SET name = ?, price = ?, stock = ?, category = ?, description = ?, image = ?
     WHERE id = ?
   `;
-  db.query(sql,[sellerValue, name, price, stock, category || null, description || null, imagePath, id], (err, result) => {
+  db.query(sql,[name, price, stock, category || null, description || null, imagePath, id], (err, result) => {
     if (err) {
       console.error("Update product error:", err);
       return res.status(500).json({ message: "Database error" });
@@ -642,7 +401,7 @@ app.get("/api/vendor/orders", (req, res) => {
     }
 
     const orderIds = orders.map(order => order.id);
-    db.query("SELECT oi.*, p.name AS product_name, p.image AS product_image, p.description AS product_description FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id IN (?)", [orderIds], (itemErr, items) => {
+    db.query("SELECT * FROM order_items WHERE order_id IN (?)", [orderIds], (itemErr, items) => {
       if (itemErr) {
         console.error("Fetch order items error:", itemErr);
         return res.status(500).json({ message: "Database error" });
@@ -653,9 +412,7 @@ app.get("/api/vendor/orders", (req, res) => {
         acc[item.order_id].push({
           qty: item.quantity,
           name: item.product_name,
-          price: parseFloat(item.product_price) || 0,
-          image: item.product_image || null,
-          description: item.product_description || ''
+          price: item.product_price
         });
         return acc;
       }, {});
@@ -670,7 +427,11 @@ app.get("/api/vendor/orders", (req, res) => {
         status: String(order.order_status || 'pending').charAt(0).toUpperCase() + String(order.order_status || 'pending').slice(1),
         date: new Date(order.created_at).toLocaleDateString('en-US'),
         time: new Date(order.created_at).toLocaleTimeString('en-US'),
-        items: itemsByOrder[order.id] || []
+        items: (itemsByOrder[order.id] || []).map(item => ({
+          qty: item.quantity,
+          name: item.product_name,
+          price: parseFloat(item.product_price) || 0
+        }))
       }));
 
       res.json(formattedOrders);
@@ -690,7 +451,7 @@ app.get("/api/admin/orders", (req, res) => {
     }
 
     const orderIds = orders.map(order => order.id);
-    db.query("SELECT oi.*, p.name as product_name FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id IN (?)", [orderIds], (itemErr, items) => {
+    db.query("SELECT * FROM order_items WHERE order_id IN (?)", [orderIds], (itemErr, items) => {
       if (itemErr) {
         console.error("Fetch order items error:", itemErr);
         return res.status(500).json({ message: "Database error" });
@@ -760,104 +521,6 @@ app.put("/api/vendor/orders/:orderId/status", (req, res) => {
   });
 });
 
-// Accept order by seller and assign to nearby riders
-app.post("/api/vendor/orders/:orderId/accept", (req, res) => {
-  const { orderId } = req.params;
-  const { sellerId } = req.body; // sellerId should be the sellers table id, not user_id
-
-  console.log(`Accepting order ${orderId} for seller ${sellerId}`);
-
-  if (!sellerId) return res.status(400).json({ message: "Seller ID is required." });
-
-  // First, update order with seller_id and status
-  db.query(
-    "UPDATE orders SET seller_id = ?, order_status = 'processing' WHERE id = ? AND seller_id IS NULL",
-    [sellerId, orderId],
-    (updateErr, result) => {
-      if (updateErr) {
-        console.error("Update order error:", updateErr);
-        return res.status(500).json({ message: "Database error" });
-      }
-      if (result.affectedRows === 0) {
-        console.log(`Order ${orderId} already accepted or not found`);
-        return res.status(400).json({ message: "Order already accepted or not found." });
-      }
-
-      console.log(`Order ${orderId} updated with seller ${sellerId}`);
-
-      // Get seller location
-      db.query("SELECT current_location FROM sellers WHERE id = ?", [sellerId], (sellerErr, sellerRows) => {
-        if (sellerErr) {
-          console.error("Fetch seller location error:", sellerErr);
-          return res.status(500).json({ message: "Database error" });
-        }
-        if (!sellerRows.length || !sellerRows[0].current_location) {
-          console.log(`Seller ${sellerId} has no location`);
-          return res.status(400).json({ message: "Seller location not available." });
-        }
-
-        let sellerLocation = sellerRows[0].current_location;
-        // Handle both JSON string and parsed object
-        if (typeof sellerLocation === 'string') {
-          sellerLocation = JSON.parse(sellerLocation);
-        }
-        console.log(`Seller location:`, sellerLocation);
-        console.log(`Seller location:`, sellerLocation);
-
-        // Find nearby riders within 5km
-        findNearbyRiders(sellerLocation, 5, (riders) => {
-          console.log(`Found ${riders.length} nearby riders`);
-          if (riders.length === 0) {
-            return res.status(200).json({ message: "Order accepted, but no riders available nearby." });
-          }
-
-          // Send notifications to riders in order of proximity
-          assignOrderToRiders(orderId, riders, (success) => {
-            if (success) {
-              console.log(`Order ${orderId} successfully assigned`);
-              res.json({ message: "Order accepted and assigned to riders." });
-            } else {
-              console.log(`Failed to assign order ${orderId}`);
-              res.status(500).json({ message: "Order accepted but failed to assign riders." });
-            }
-          });
-        });
-      });
-    }
-  );
-});
-
-// Get rider profile by user_id
-app.get("/api/rider/profile", (req, res) => {
-  const { userId } = req.query;
-  if (!userId) return res.status(400).json({ message: "userId required" });
-
-  db.query("SELECT id, user_id, vehicle_type, is_active FROM riders WHERE user_id = ?", [userId], (err, rows) => {
-    if (err) {
-      console.error("Fetch rider profile error:", err);
-      return res.status(500).json({ message: "Database error" });
-    }
-    if (!rows.length) return res.status(404).json({ message: "Rider not found" });
-
-    res.json(rows[0]);
-  });
-});
-
-// Get seller profile by user_id
-app.get("/api/seller/profile", (req, res) => {
-  const { userId } = req.query;
-  if (!userId) return res.status(400).json({ message: "userId required" });
-
-  db.query("SELECT id, user_id, business_name, store_status, current_location FROM sellers WHERE user_id = ?", [userId], (err, rows) => {
-    if (err) {
-      console.error("Fetch seller profile error:", err);
-      return res.status(500).json({ message: "Database error" });
-    }
-    if (!rows.length) return res.status(404).json({ message: "Seller not found" });
-
-    res.json(rows[0]);
-  });
-});
 
 // ---------------- PRICING ----------------
 app.put("/api/products/:id/pricing", (req, res) => {
@@ -906,8 +569,7 @@ app.get("/api/cart", (req, res) => {
       price: r.price,
       salePrice: r.salePrice,
       basePrice: r.basePrice,
-      image: r.image,
-      seller_id: r.seller_id
+      image: r.image
     }));
     res.json(out);
   });
@@ -1064,7 +726,6 @@ app.post("/api/orders", (req, res) => {
           const finalizeOrder = () => {
             db.commit((err) => {
               if (err) return db.rollback(() => res.status(500).json({ message: "Database error" }));
-<<<<<<< HEAD
               //new code
               const newOrderTask = {
                 id: orderId,
@@ -1080,100 +741,6 @@ app.post("/api/orders", (req, res) => {
               io.emit("new_order_available", newOrderTask); 
               // ------------------------------------
 
-=======
-              
-              // Fetch sellers for products in this order to send notifications
-              const productIds = cart_items.map(item => item.product_id || item.id);
-              console.log(`\n🛒 [Order Created] Order #${order_number} (ID: ${orderId})`);
-              console.log(`   Product IDs: [${productIds.join(', ')}]`);
-              console.log(`   Customer: ${customer_name}`);
-              
-              const sellerQuery = `
-                SELECT DISTINCT p.seller_id, s.user_id, s.business_name, u.email, u.full_name
-                FROM products p
-                LEFT JOIN sellers s ON p.seller_id = s.id
-                LEFT JOIN users u ON s.user_id = u.id
-                WHERE p.id IN (?)
-              `;
-              
-              db.query(sellerQuery, [productIds], (err, sellerRows) => {
-                if (err) {
-                  console.error("❌ Error fetching sellers:", err);
-                } else {
-                  console.log(`   Found sellers: ${sellerRows.length}`);
-                  
-                  // Send notifications to all sellers whose products are in this order
-                  const notificationData = {
-                    order_id: orderId,
-                    order_number: order_number,
-                    customer_name: customer_name,
-                    customer_phone: customer_phone,
-                    customer_email: customer_email,
-                    total_amount: total_amount,
-                    created_at: new Date().toISOString(),
-                    items: cart_items
-                  };
-
-                  sellerRows.forEach(seller => {
-                    if (!seller.seller_id) {
-                      console.log(`   ⚠️  Product has no seller_id, skipping`);
-                      return;
-                    }
-
-                    if (!seller.user_id) {
-                      console.log(`   ⚠️  Seller record missing user_id for seller ${seller.business_name}`);
-                    }
-
-                    // Also send email notification to seller if configured
-                    if (seller.email && transporter) {
-                      const mailOptions = {
-                        from: process.env.EMAIL_USER,
-                        to: seller.email,
-                        subject: `New Order #${order_number} - ${customer_name}`,
-                        text: `
-Dear ${seller.full_name},
-
-You have received a new order!
-
-Order Details:
-- Order Number: ${order_number}
-- Order ID: ${orderId}
-- Customer: ${customer_name}
-- Phone: ${customer_phone}
-- Total Amount: Rs ${total_amount}
-- Payment Method: ${payment_method}
-- Delivery Address: ${shipping_address}
-
-Please log in to your StoreHub dashboard to view and accept this order.
-
-Best regards,
-StoreHub Team
-                        `
-                      };
-                      
-                      transporter.sendMail(mailOptions, (mailErr) => {
-                        if (mailErr) {
-                          console.error(`[ERROR] Failed to send email to seller ${seller.email}:`, mailErr.message);
-                        } else {
-                          console.log(`[SUCCESS] Email notification sent to ${seller.email}`);
-                        }
-                      });
-                    }
-                  });
-
-                  // Broadcast notification to all online sellers as a fallback so any connected seller sees the order alert
-                  if (sellerConnections.size > 0) {
-                    sellerConnections.forEach((sellerSocket, userId) => {
-                      sellerSocket.emit('new_order_notification', notificationData);
-                    });
-                    console.log(`   🔔 Broadcasted new_order_notification to ${sellerConnections.size} connected sellers`);
-                  } else {
-                    console.log('   ℹ️  No seller sockets currently connected for broadcast');
-                  }
-                }
-              });
-              
->>>>>>> e5a3eebcc548fe45c232f9240c93c42fb42de777
               res.json({
                 message: "Order created successfully",
                 order_id: orderId,

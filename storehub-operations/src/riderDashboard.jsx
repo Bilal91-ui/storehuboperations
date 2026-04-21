@@ -39,21 +39,6 @@ const riderId = localStorage.getItem("user_id"); // Get logged in rider ID
     };
 
     fetchTasks();
-
-    // Socket: Listen for new orders placed by customers
-    socket.on("new_order_available", (newOrder) => {
-      setTasks((prev) => [newOrder, ...prev]);
-    });
-
-    // Socket: Remove order if another rider accepts it
-    socket.on("task_taken", (orderId) => {
-      setTasks((prev) => prev.filter(t => t.id !== orderId));
-    });
-
-    return () => {
-      socket.off("new_order_available");
-      socket.off("task_taken");
-    };
   }, []);
 
   // --- DATA: EARNINGS HISTORY (Req 5 & 6) ---
@@ -177,6 +162,16 @@ const riderId = localStorage.getItem("user_id"); // Get logged in rider ID
       alert('A rider order assignment was received. Check the dashboard for details.');
     });
 
+    // Socket: Listen for new orders placed by customers
+    newSocket.on("new_order_available", (newOrder) => {
+      setTasks((prev) => [newOrder, ...prev]);
+    });
+
+    // Socket: Remove order if another rider accepts it
+    newSocket.on("task_taken", (orderId) => {
+      setTasks((prev) => prev.filter(t => t.id !== orderId));
+    });
+
     // Get initial location
     if (navigator.geolocation) {
       const sendLocation = (loc) => {
@@ -229,6 +224,9 @@ const riderId = localStorage.getItem("user_id"); // Get logged in rider ID
 
       // Cleanup
       return () => {
+        newSocket.off("new_order_available");
+        newSocket.off("task_taken");
+        newSocket.off("rider_order_assigned");
         newSocket.disconnect();
         navigator.geolocation.clearWatch(watchId);
       };
