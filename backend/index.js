@@ -1,8 +1,7 @@
 // server.js
 const express = require("express");
-//new code
-const http = require("http"); // Add this
-const { Server } = require("socket.io"); // Add this
+const http = require("http");
+const { Server } = require("socket.io");
 
 const cors = require("cors");
 require("dotenv").config();
@@ -11,28 +10,18 @@ const multer = require("multer");
 const path = require("path");
 const bcrypt = require("bcrypt");
 const nodemailer = require("nodemailer");
-const { createServer } = require("http");
 
 console.log("Loaded NODE_ENV:", process.env.NODE_ENV);
 console.log("All env vars starting with NODE:", Object.keys(process.env).filter(key => key.startsWith('NODE')));
 
 const app = express();
-//new code
-const server = http.createServer(app); // Add this
+const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: "*" } // Allows frontend to connect
+  cors: { origin: "*" }
 });
 
-// Socket.io Connection Logic
-io.on("connection", (socket) => {
-  console.log("Rider/User connected:", socket.id);
-  socket.on("disconnect", () => console.log("User disconnected"));
-});
 app.use(cors());
 app.use(express.json());
-
-// Create HTTP server
-// Initialize Socket.IO
 
 // ================= EMAIL SERVICE =================
 const transporter = nodemailer.createTransport({
@@ -515,10 +504,9 @@ app.post("/api/auth/login", async (req, res) => {
 
   // 2. NORMAL USER/PARTNER LOGIN
   db.query(
-    `SELECT u.*, r.role_name, s.id AS seller_id 
+    `SELECT u.*, r.role_name 
      FROM users u 
      JOIN roles r ON u.role_id = r.id 
-     LEFT JOIN sellers s ON u.id = s.user_id
      WHERE u.email = ?`,
     [email],
     async (err, rows) => {
@@ -537,8 +525,7 @@ app.post("/api/auth/login", async (req, res) => {
         message: "Login success",
         user_id: user.id,
         role_id: user.role_id,
-        role: user.role_name,
-        seller_id: user.seller_id || null
+        role: user.role_name // <-- Asal DB role frontend ko bhejein
       });
     }
   );
@@ -546,25 +533,22 @@ app.post("/api/auth/login", async (req, res) => {
 
 // ---------------- PRODUCTS ----------------
 app.post("/api/products", upload.single("image"), (req, res) => {
-  const { name, price, stock, category, description, seller_id } = req.body;
+  const { name, price, stock, category, description } = req.body;
   const imagePath = req.file ? `/uploads/${req.file.filename}` : null;
-
-  console.log("[DEBUG] POST /api/products received:", { name, price, stock, category, description, seller_id });
 
   if (!name || !price || price <= 0 || !stock || stock < 0) {
     return res.status(400).json({ message: "Invalid product data: name, positive price, and non-negative stock required" });
   }
 
   const sql = `
-    INSERT INTO products (seller_id, name, price, stock, category, description, image, basePrice)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO products (name, price, stock, category, description, image, basePrice)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `;
-  db.query(sql,[seller_id || null, name, price, stock, category || null, description || null, imagePath, price], (err, result) => {
+  db.query(sql,[name, price, stock, category || null, description || null, imagePath, price], (err, result) => {
     if (err) {
       console.error("Insert product error:", err);
       return res.status(500).json({ message: "Database error" });
     }
-    console.log(`[SUCCESS] Product added with seller_id:${seller_id}, product_id:${result.insertId}`);
     res.json({ message: "Product added", id: result.insertId });
   });
 });
@@ -581,16 +565,15 @@ app.get("/api/products", (req, res) => {
 
 app.put("/api/products/:id", upload.single("image"), (req, res) => {
   const { id } = req.params;
-  const { name, price, stock, category, description, image, seller_id } = req.body;
+  const { name, price, stock, category, description, image } = req.body;
   const imagePath = req.file ? `/uploads/${req.file.filename}` : image || null;
-  const sellerValue = seller_id === undefined ? null : seller_id;
 
   const sql = `
     UPDATE products 
-    SET seller_id = COALESCE(?, seller_id), name = ?, price = ?, stock = ?, category = ?, description = ?, image = ?
+    SET name = ?, price = ?, stock = ?, category = ?, description = ?, image = ?
     WHERE id = ?
   `;
-  db.query(sql,[sellerValue, name, price, stock, category || null, description || null, imagePath, id], (err, result) => {
+  db.query(sql,[name, price, stock, category || null, description || null, imagePath, id], (err, result) => {
     if (err) {
       console.error("Update product error:", err);
       return res.status(500).json({ message: "Database error" });
@@ -666,7 +649,7 @@ app.get("/api/vendor/orders", (req, res) => {
     }
 
     const orderIds = orders.map(order => order.id);
-    db.query("SELECT oi.*, p.name AS product_name, p.image AS product_image, p.description AS product_description FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id IN (?)", [orderIds], (itemErr, items) => {
+    db.query("SELECT * FROM order_items WHERE order_id IN (?)", [orderIds], (itemErr, items) => {
       if (itemErr) {
         console.error("Fetch order items error:", itemErr);
         return res.status(500).json({ message: "Database error" });
@@ -677,9 +660,7 @@ app.get("/api/vendor/orders", (req, res) => {
         acc[item.order_id].push({
           qty: item.quantity,
           name: item.product_name,
-          price: parseFloat(item.product_price) || 0,
-          image: item.product_image || null,
-          description: item.product_description || ''
+          price: item.product_price
         });
         return acc;
       }, {});
@@ -694,7 +675,11 @@ app.get("/api/vendor/orders", (req, res) => {
         status: String(order.order_status || 'pending').charAt(0).toUpperCase() + String(order.order_status || 'pending').slice(1),
         date: new Date(order.created_at).toLocaleDateString('en-US'),
         time: new Date(order.created_at).toLocaleTimeString('en-US'),
-        items: itemsByOrder[order.id] || []
+        items: (itemsByOrder[order.id] || []).map(item => ({
+          qty: item.quantity,
+          name: item.product_name,
+          price: parseFloat(item.product_price) || 0
+        }))
       }));
 
       res.json(formattedOrders);
@@ -714,7 +699,7 @@ app.get("/api/admin/orders", (req, res) => {
     }
 
     const orderIds = orders.map(order => order.id);
-    db.query("SELECT oi.*, p.name as product_name FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id IN (?)", [orderIds], (itemErr, items) => {
+    db.query("SELECT * FROM order_items WHERE order_id IN (?)", [orderIds], (itemErr, items) => {
       if (itemErr) {
         console.error("Fetch order items error:", itemErr);
         return res.status(500).json({ message: "Database error" });
@@ -784,104 +769,6 @@ app.put("/api/vendor/orders/:orderId/status", (req, res) => {
   });
 });
 
-// Accept order by seller and assign to nearby riders
-app.post("/api/vendor/orders/:orderId/accept", (req, res) => {
-  const { orderId } = req.params;
-  const { sellerId } = req.body; // sellerId should be the sellers table id, not user_id
-
-  console.log(`Accepting order ${orderId} for seller ${sellerId}`);
-
-  if (!sellerId) return res.status(400).json({ message: "Seller ID is required." });
-
-  // First, update order with seller_id and status
-  db.query(
-    "UPDATE orders SET seller_id = ?, order_status = 'processing' WHERE id = ? AND seller_id IS NULL",
-    [sellerId, orderId],
-    (updateErr, result) => {
-      if (updateErr) {
-        console.error("Update order error:", updateErr);
-        return res.status(500).json({ message: "Database error" });
-      }
-      if (result.affectedRows === 0) {
-        console.log(`Order ${orderId} already accepted or not found`);
-        return res.status(400).json({ message: "Order already accepted or not found." });
-      }
-
-      console.log(`Order ${orderId} updated with seller ${sellerId}`);
-
-      // Get seller location
-      db.query("SELECT current_location FROM sellers WHERE id = ?", [sellerId], (sellerErr, sellerRows) => {
-        if (sellerErr) {
-          console.error("Fetch seller location error:", sellerErr);
-          return res.status(500).json({ message: "Database error" });
-        }
-        if (!sellerRows.length || !sellerRows[0].current_location) {
-          console.log(`Seller ${sellerId} has no location`);
-          return res.status(400).json({ message: "Seller location not available." });
-        }
-
-        let sellerLocation = sellerRows[0].current_location;
-        // Handle both JSON string and parsed object
-        if (typeof sellerLocation === 'string') {
-          sellerLocation = JSON.parse(sellerLocation);
-        }
-        console.log(`Seller location:`, sellerLocation);
-        console.log(`Seller location:`, sellerLocation);
-
-        // Find nearby riders within 5km
-        findNearbyRiders(sellerLocation, 5, (riders) => {
-          console.log(`Found ${riders.length} nearby riders`);
-          if (riders.length === 0) {
-            return res.status(200).json({ message: "Order accepted, but no riders available nearby." });
-          }
-
-          // Send notifications to riders in order of proximity
-          assignOrderToRiders(orderId, riders, (success) => {
-            if (success) {
-              console.log(`Order ${orderId} successfully assigned`);
-              res.json({ message: "Order accepted and assigned to riders." });
-            } else {
-              console.log(`Failed to assign order ${orderId}`);
-              res.status(500).json({ message: "Order accepted but failed to assign riders." });
-            }
-          });
-        });
-      });
-    }
-  );
-});
-
-// Get rider profile by user_id
-app.get("/api/rider/profile", (req, res) => {
-  const { userId } = req.query;
-  if (!userId) return res.status(400).json({ message: "userId required" });
-
-  db.query("SELECT id, user_id, vehicle_type, is_active FROM riders WHERE user_id = ?", [userId], (err, rows) => {
-    if (err) {
-      console.error("Fetch rider profile error:", err);
-      return res.status(500).json({ message: "Database error" });
-    }
-    if (!rows.length) return res.status(404).json({ message: "Rider not found" });
-
-    res.json(rows[0]);
-  });
-});
-
-// Get seller profile by user_id
-app.get("/api/seller/profile", (req, res) => {
-  const { userId } = req.query;
-  if (!userId) return res.status(400).json({ message: "userId required" });
-
-  db.query("SELECT id, user_id, business_name, store_status, current_location FROM sellers WHERE user_id = ?", [userId], (err, rows) => {
-    if (err) {
-      console.error("Fetch seller profile error:", err);
-      return res.status(500).json({ message: "Database error" });
-    }
-    if (!rows.length) return res.status(404).json({ message: "Seller not found" });
-
-    res.json(rows[0]);
-  });
-});
 
 // Get nearby riders for seller
 app.get("/api/seller/nearby-riders", (req, res) => {
@@ -956,8 +843,7 @@ app.get("/api/cart", (req, res) => {
       price: r.price,
       salePrice: r.salePrice,
       basePrice: r.basePrice,
-      image: r.image,
-      seller_id: r.seller_id
+      image: r.image
     }));
     res.json(out);
   });
@@ -1129,7 +1015,6 @@ app.post("/api/orders", (req, res) => {
               io.emit("new_order_available", newOrderTask); 
               // ------------------------------------
               
-              // Fetch sellers for products in this order to send notifications
               const productIds = cart_items.map(item => item.product_id || item.id);
               console.log(`\n🛒 [Order Created] Order #${order_number} (ID: ${orderId})`);
               console.log(`   Product IDs: [${productIds.join(', ')}]`);
@@ -1219,7 +1104,6 @@ StoreHub Team
                   }
                 }
               });
-              
               res.json({
                 message: "Order created successfully",
                 order_id: orderId,

@@ -93,6 +93,9 @@ const RiderDashboard = ({ onLogout }) => {
     };
 
     fetchTasks();
+<<<<<<< HEAD
+  }, []);
+=======
 
     // Socket: Listen for new orders placed by customers
     socket.on("new_order_available", (newOrder) => {
@@ -109,6 +112,7 @@ const RiderDashboard = ({ onLogout }) => {
       socket.off("task_taken");
     };
   }, [socket]);
+>>>>>>> 44a62cb4db9c7b849174dc56455faa8a90fba2ac
 
   // --- DATA: EARNINGS HISTORY (Req 5 & 6) ---
   const [earningsFilter, setEarningsFilter] = useState('weekly');
@@ -194,6 +198,51 @@ const RiderDashboard = ({ onLogout }) => {
 
   // --- LOCATION SETUP ---
   useEffect(() => {
+<<<<<<< HEAD
+    // Connect to Socket.IO
+    const newSocket = io('http://localhost:5000');
+    setSocket(newSocket);
+
+    const getSessionData = () => {
+      const saved = localStorage.getItem('sellerData') || localStorage.getItem('storehubOperationsSession');
+      if (!saved) return null;
+      try {
+        return JSON.parse(saved);
+      } catch (parseError) {
+        console.warn('Unable to parse login data from localStorage:', parseError);
+        return null;
+      }
+    };
+
+    newSocket.on('connect', () => {
+      console.log('Rider socket connected:', newSocket.id);
+      const riderData = getSessionData();
+      if (riderData) {
+        const { user_id, id, userId, seller_id } = riderData;
+        newSocket.emit('rider_login', {
+          user_id: user_id || userId || id,
+          rider_id: seller_id || userId || id
+        });
+      }
+    });
+
+    newSocket.on('rider_order_assigned', (data) => {
+      console.log('Rider assignment event received:', data);
+      alert('A rider order assignment was received. Check the dashboard for details.');
+    });
+
+    // Socket: Listen for new orders placed by customers
+    newSocket.on("new_order_available", (newOrder) => {
+      setTasks((prev) => [newOrder, ...prev]);
+    });
+
+    // Socket: Remove order if another rider accepts it
+    newSocket.on("task_taken", (orderId) => {
+      setTasks((prev) => prev.filter(t => t.id !== orderId));
+    });
+
+=======
+>>>>>>> 44a62cb4db9c7b849174dc56455faa8a90fba2ac
     // Get initial location
     if (navigator.geolocation) {
       const sendLocation = (loc) => {
@@ -247,6 +296,13 @@ const RiderDashboard = ({ onLogout }) => {
 
       // Cleanup
       return () => {
+<<<<<<< HEAD
+        newSocket.off("new_order_available");
+        newSocket.off("task_taken");
+        newSocket.off("rider_order_assigned");
+        newSocket.disconnect();
+=======
+>>>>>>> 44a62cb4db9c7b849174dc56455faa8a90fba2ac
         navigator.geolocation.clearWatch(watchId);
       };
     } else {
