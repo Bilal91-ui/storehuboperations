@@ -4,25 +4,50 @@ import './delivery.css';
 import './sellerDashboard.css';
 
 const Delivery = () => {
-  // 1. Mock Data: Active Deliveries
-  const [deliveries, setDeliveries] = useState([
-    { id: 101, customer: 'John Doe', address: '123 Market St', status: 'Pending', rider: null },
-    { id: 102, customer: 'Jane Smith', address: '456 Oak Ave', status: 'In Transit', rider: { name: 'Mike Ross', vehicle: 'Yamaha Bike', contact: '555-0199' }, progress: 60 },
-    { id: 103, customer: 'Alice Brown', address: '789 Pine Rd', status: 'Pending', rider: null }
-  ]);
-
-  // 2. Mock Data: Available Riders for Manual Assign
-  const availableRiders = [
-    { id: 1, name: 'Sarah Connor', vehicle: 'Honda Scooter', contact: '555-1234', dist: '2km away' },
-    { id: 2, name: 'Kyle Reese', vehicle: 'Suzuki Bike', contact: '555-5678', dist: '0.5km away' },
-    { id: 3, name: 'T-800', vehicle: 'Harley Davidson', contact: '555-9999', dist: '5km away' }
-  ];
+  // Remove mock data - use actual riders from API
+  const [deliveries, setDeliveries] = useState([]);
+  const [availableRiders, setAvailableRiders] = useState([]);
+  const [session, setSession] = useState(null);
 
   // 3. UI States
-  const [view, setView] = useState('list'); // 'list', 'assign-manual', 'track'
+  const [view, setView] = useState('list');
   const [selectedOrderId, setSelectedOrderId] = useState(null);
   const [notification, setNotification] = useState('');
   const [trackingProgress, setTrackingProgress] = useState(0);
+
+  // Load session data
+  useEffect(() => {
+    const getSessionData = () => {
+      const saved = localStorage.getItem('sellerData') || localStorage.getItem('storehubOperationsSession');
+      if (!saved) return null;
+      try {
+        return JSON.parse(saved);
+      } catch (err) {
+        console.warn('Invalid seller session data', err);
+        return null;
+      }
+    };
+    setSession(getSessionData());
+  }, []);
+
+  // Fetch nearby riders
+  useEffect(() => {
+    if (session && session.user_id) {
+      fetch(`http://localhost:5000/api/seller/nearby-riders?userId=${session.user_id}`)
+        .then(res => res.json())
+        .then(data => {
+          const formatted = data.map(rider => ({
+            id: rider.id,
+            name: rider.name,
+            vehicle: rider.vehicle_type || 'Unknown',
+            contact: 'N/A',
+            dist: `${rider.distance.toFixed(1)}km away`
+          }));
+          setAvailableRiders(formatted);
+        })
+        .catch(err => console.error('Error fetching nearby riders:', err));
+    }
+  }, [session]);
 
   // --- HANDLERS ---
 
@@ -91,41 +116,35 @@ const Delivery = () => {
 
   const renderList = () => (
     <>
-      {deliveries.map(order => (
-        <div key={order.id} className="delivery-card">
-          <div className="delivery-top">
-            <h4>Order #{order.id} <span style={{fontSize:'0.9rem', color:'#666'}}>- {order.customer}</span></h4>
-            <span className={`status-badge ${order.status === 'Pending' ? 'status-pending' : 'status-shipped'}`}>
-              {order.status}
-            </span>
-          </div>
-          <p style={{color:'#555', fontSize:'0.9rem', marginBottom:'10px'}}>📍 {order.address}</p>
-
-          {order.rider ? (
-            // Assigned State
-            <div>
-              <div className="rider-info">
-                <strong>🏍️ Rider: {order.rider.name}</strong><br/>
-                <span>Vehicle: {order.rider.vehicle}</span><br/>
-                <span>Contact: {order.rider.contact}</span>
-              </div>
-              <button className="submit-button" style={{width:'100%'}} onClick={() => openTracking(order)}>
-                🗺️ Track Live Location
-              </button>
-            </div>
-          ) : (
-            // Unassigned State
-            <div className="action-row">
-              <button className="submit-button" onClick={() => handleAutoAssign(order.id)}>
-                ⚡ Auto Assign
-              </button>
-              <button className="btn-secondary" onClick={() => openManualAssign(order.id)}>
-                👆 Manual Select
-              </button>
-            </div>
-          )}
+      <div className="delivery-header">
+        <h2>Available Riders - 5km Radius</h2>
+        <span>Total Riders: {availableRiders.length}</span>
+      </div>
+      
+      {availableRiders.length === 0 ? (
+        <div style={{textAlign: 'center', padding: '40px', color: '#999'}}>
+          <p>No riders available in 5km radius</p>
+          <p style={{fontSize: '0.9rem'}}>📍 Make sure your location is enabled and riders are active</p>
         </div>
-      ))}
+      ) : (
+        <div style={{display: 'grid', gap: '15px'}}>
+          {availableRiders.map((rider, idx) => (
+            <div key={idx} className="delivery-card">
+              <div className="delivery-top">
+                <h4>🏍️ {rider.name}</h4>
+                <span style={{background: '#4CAF50', color: 'white', padding: '4px 8px', borderRadius: '4px', fontSize: '0.9rem'}}>
+                  Available
+                </span>
+              </div>
+              <p style={{color: '#555', fontSize: '0.9rem', marginBottom: '8px'}}>
+                <strong>Vehicle:</strong> {rider.vehicle}<br/>
+                <strong>Distance:</strong> {rider.dist}
+              </p>
+
+            </div>
+          ))}
+        </div>
+      )}
     </>
   );
 
@@ -188,11 +207,13 @@ const Delivery = () => {
     );
   };
 
+
+
   return (
     <div className="delivery-container">
       <div className="delivery-header">
-        <h2>Delivery Coordination</h2>
-        <span>Active Assignments: {deliveries.filter(d => d.rider).length}</span>
+        <h2>Rider Management</h2>
+        <span>Available: {availableRiders.length}</span>
       </div>
 
       {notification && <div className="alert-success">🔔 {notification}</div>}

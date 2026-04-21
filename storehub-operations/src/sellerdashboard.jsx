@@ -47,6 +47,27 @@ const SellerDashboard = ({ onLogout }) => {
         user_id: user_id || userId,
         seller_id: seller_id || sellerId
       });
+
+      // Start location tracking
+      if (navigator.geolocation) {
+        const watchId = navigator.geolocation.watchPosition(
+          (position) => {
+            const location = {
+              lat: position.coords.latitude,
+              lng: position.coords.longitude
+            };
+            console.log('Sending seller location:', location);
+            socket.emit('seller_location', { user_id: user_id || userId, location });
+          },
+          (error) => console.error('Seller location error:', error),
+          { enableHighAccuracy: true, maximumAge: 30000, timeout: 27000 }
+        );
+
+        // Store watchId for cleanup
+        socket.watchId = watchId;
+      } else {
+        console.warn('Geolocation not supported');
+      }
     });
 
     socket.on('new_order_notification', (notificationData) => {
@@ -61,9 +82,18 @@ const SellerDashboard = ({ onLogout }) => {
 
     socket.on('disconnect', () => {
       console.log('Seller socket disconnected');
+      // Clear location watch on disconnect
+      if (socket.watchId) {
+        navigator.geolocation.clearWatch(socket.watchId);
+      }
     });
 
-    return () => socket.disconnect();
+    return () => {
+      socket.disconnect();
+      if (socket.watchId) {
+        navigator.geolocation.clearWatch(socket.watchId);
+      }
+    };
   }, []);
 
   // --- Render Logic ---

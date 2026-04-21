@@ -128,7 +128,6 @@ const VendorOrders = () => {
     }
 
     fetchOrders();
-    // Update the selected order status locally for immediate UI feedback
     if (selectedOrder && selectedOrder.id === orderId) {
       setSelectedOrder({ ...selectedOrder, status: newStatus });
     }
@@ -143,6 +142,44 @@ const VendorOrders = () => {
   }
 };
 
+  const handleAcceptOrder = async (orderId) => {
+    setLoading(true);
+    try {
+      const saved = localStorage.getItem('sellerData') || localStorage.getItem('storehubOperationsSession');
+      if (!saved) {
+        alert('Seller session not found. Please login again.');
+        return;
+      }
+
+      const sellerData = JSON.parse(saved);
+      const sellerId = sellerData.seller_id || sellerData.sellerId;
+      if (!sellerId) {
+        alert('Seller ID not found in session.');
+        return;
+      }
+
+      const res = await fetch(`http://localhost:5000/api/vendor/orders/${orderId}/accept`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sellerId })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.message || 'Failed to accept order');
+        return;
+      }
+
+      fetchOrders();
+      showNotification(`Order #${orderId} accepted. Nearest rider notified.`);
+    } catch (error) {
+      console.error(error);
+      alert('Failed to accept order');
+    } finally {
+      setLoading(false);
+    }
+  };
+
 
   // Helper to render buttons based on status
   const renderActionButtons = (order) => {
@@ -151,7 +188,7 @@ const VendorOrders = () => {
       case 'Pending':
         return (
           <>
-            <button className="submit-button btn-accept" onClick={() => handleStatusChange(order.id, 'Processing')} disabled={loading}>
+            <button className="submit-button btn-accept" onClick={() => handleAcceptOrder(order.id)} disabled={loading}>
               {loading ? 'Processing...' : '✅ Accept Order'}
             </button>
             <button className="submit-button btn-decline" onClick={() => handleStatusChange(order.id, 'Cancelled')} disabled={loading}>

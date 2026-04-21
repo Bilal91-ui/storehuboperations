@@ -20,7 +20,7 @@ function Home() {
 
   const [isLoggedIn, setIsLoggedIn] = useState(() => {
     try {
-      const raw = window.localStorage.getItem(SESSION_STORAGE_KEY)
+      const raw = window.sessionStorage.getItem(SESSION_STORAGE_KEY)
       const saved = raw ? JSON.parse(raw) : null
       return !!saved?.role
     } catch {
@@ -30,7 +30,7 @@ function Home() {
 
   const [userRole, setUserRole] = useState(() => {
     try {
-      const raw = window.localStorage.getItem(SESSION_STORAGE_KEY)
+      const raw = window.sessionStorage.getItem(SESSION_STORAGE_KEY)
       const saved = raw ? JSON.parse(raw) : null
       return saved?.role || ""
     } catch {
@@ -117,12 +117,21 @@ function Home() {
           userId: data.user_id || null,
           seller_id: data.seller_id || null
         }
-        window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(sessionData))
+        // Use sessionStorage for per-tab session management
+        window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(sessionData))
 
+        // Also store in localStorage with role-specific key for cross-tab socket connectivity
         if (data.role === 'seller') {
           window.localStorage.setItem('sellerData', JSON.stringify({
             user_id: data.user_id || null,
             seller_id: data.seller_id || null,
+            role: data.role,
+            email
+          }))
+        } else if (data.role === 'rider') {
+          window.localStorage.setItem('riderData', JSON.stringify({
+            user_id: data.user_id || null,
+            rider_id: data.rider_id || null,
             role: data.role,
             email
           }))
@@ -215,7 +224,9 @@ function Home() {
   }
 
   const handleLogout = () => {
-    window.localStorage.removeItem(SESSION_STORAGE_KEY)
+    window.sessionStorage.removeItem(SESSION_STORAGE_KEY)
+    window.localStorage.removeItem('sellerData')
+    window.localStorage.removeItem('riderData')
     setIsLoggedIn(false)
     setUserRole("")
     setSelectedRole(null)

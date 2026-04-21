@@ -98,7 +98,7 @@ function findNearbyRiders(centerLocation, radiusKm, callback) {
 
   // Get all active riders with locations
   const sql = `
-    SELECT r.id, r.user_id, r.current_location, u.full_name
+    SELECT r.id, r.user_id, r.current_location, r.vehicle_type, u.full_name
     FROM riders r
     JOIN users u ON r.user_id = u.id
     WHERE r.is_active = TRUE AND r.current_location IS NOT NULL
@@ -126,6 +126,7 @@ function findNearbyRiders(centerLocation, radiusKm, callback) {
             id: rider.id,
             user_id: rider.user_id,
             name: rider.full_name,
+            vehicle_type: rider.vehicle_type,
             location: riderLocation,
             distance: distance
           });
@@ -153,7 +154,7 @@ function assignOrderToRiders(orderId, riders, callback) {
   console.log(`Found ${riders.length} riders within range. Notifying closest rider: ${riders[0].name} (${riders[0].distance.toFixed(1)}km)`);
 
   // For testing: just assign to the first rider immediately
-  assignOrderToRider(orderId, riders[0].id, (success) => {
+  assignOrderToRider(orderId, riders[0], (success) => {
     if (success) {
       console.log(`Order ${orderId} assigned to rider ${riders[0].name}`);
       callback(true);
@@ -162,22 +163,13 @@ function assignOrderToRiders(orderId, riders, callback) {
       callback(false);
     }
   });
-
-  // TODO: Implement proper sequential notification system
-  // Send notification to first rider
-  // io.emit('rider_order_notification', {
-  //   orderId: orderId,
-  //   riderId: riders[0].id,
-  //   riderUserId: riders[0].user_id,
-  //   message: `New order available (${riders[0].distance.toFixed(1)}km away)`
-  // });
 }
 
 // Actually assign order to a specific rider
-function assignOrderToRider(orderId, riderId, callback) {
+function assignOrderToRider(orderId, rider, callback) {
   db.query(
     "UPDATE orders SET rider_id = ?, rider_assignment_status = 'assigned' WHERE id = ? AND rider_id IS NULL",
-    [riderId, orderId],
+    [rider.id, orderId],
     (err, result) => {
       if (err) {
         console.error('Error assigning rider:', err);
@@ -185,14 +177,55 @@ function assignOrderToRider(orderId, riderId, callback) {
       }
 
       if (result.affectedRows > 0) {
-        console.log(`Order ${orderId} assigned to rider ${riderId}`);
-        // Notify the rider that they got the order
-        console.log(`Emitting rider_order_assigned to all clients:`, { orderId, riderId });
-        io.emit('rider_order_assigned', {
-          orderId: orderId,
-          riderId: riderId
+        console.log(`Order ${orderId} assigned to rider ${rider.id}`);
+        
+        // Fetch order details
+        db.query(`
+          SELECT o.id, o.order_number, o.customer_name, o.shipping_address, o.total_amount, 
+                 GROUP_CONCAT(oi.product_name SEPARATOR ', ') as items
+          FROM orders o
+          LEFT JOIN order_items oi ON o.id = oi.order_id
+          WHERE o.id = ?
+          GROUP BY o.id
+        `, [orderId], (orderErr, orderRows) => {
+          if (orderErr) {
+            console.error('Error fetching order details:', orderErr);
+            return callback(false);
+          }
+          
+          const order = orderRows[0];
+          const payload = {
+            orderId: order.id,
+            order_number: order.order_number,
+            riderId: rider.id,
+            riderUserId: rider.user_id,
+            location: rider.location,
+            distance: rider.distance,
+            message: `You have a new delivery assignment (${rider.distance.toFixed(1)} km away).`,
+            order: {
+              id: order.id,
+              order_number: order.order_number,
+              customer: order.customer_name,
+              dropoffAddr: order.shipping_address,
+              earnings: `$${(order.total_amount * 0.1).toFixed(2)}`,
+              restaurant: "StoreHub Store",
+              pickupAddr: "Central Store",
+              distance: `${rider.distance.toFixed(1)} km`,
+              items: order.items ? order.items.split(', ').map(name => ({ name, qty: 1 })) : []
+            }
+          };
+
+          const riderSocket = riderConnections.get(rider.user_id);
+          if (riderSocket) {
+            console.log(`Emitting rider_order_assigned to rider user_id ${rider.user_id} via socket ${riderSocket.id}`);
+            riderSocket.emit('rider_order_assigned', payload);
+          } else {
+            console.log(`No active socket found for rider user_id ${rider.user_id}. Broadcasting instead.`);
+            io.emit('rider_order_assigned', payload);
+          }
+
+          callback(true);
         });
-        callback(true);
       } else {
         console.log(`Order ${orderId} already assigned or not found`);
         callback(false);
@@ -847,6 +880,32 @@ app.get("/api/seller/profile", (req, res) => {
     if (!rows.length) return res.status(404).json({ message: "Seller not found" });
 
     res.json(rows[0]);
+  });
+});
+
+// Get nearby riders for seller
+app.get("/api/seller/nearby-riders", (req, res) => {
+  const { userId } = req.query;
+  if (!userId) return res.status(400).json({ message: "userId required" });
+
+  // Get seller location
+  db.query("SELECT current_location FROM sellers WHERE user_id = ?", [userId], (err, rows) => {
+    if (err) {
+      console.error("Fetch seller location error:", err);
+      return res.status(500).json({ message: "Database error" });
+    }
+    if (!rows.length || !rows[0].current_location) {
+      return res.status(400).json({ message: "Seller location not available" });
+    }
+
+    let sellerLocation = rows[0].current_location;
+    if (typeof sellerLocation === 'string') {
+      sellerLocation = JSON.parse(sellerLocation);
+    }
+
+    findNearbyRiders(sellerLocation, 5, (riders) => {
+      res.json(riders);
+    });
   });
 });
 

@@ -25,7 +25,18 @@ const RiderDashboard = ({ onLogout }) => {
   // --- DATA: NEW TASKS ---
   const [tasks, setTasks] = useState([]);
   //new code
-  const riderId = localStorage.getItem("user_id"); // Get logged in rider ID
+  const getRiderId = () => {
+    const saved = localStorage.getItem('riderData');
+    if (!saved) return null;
+    try {
+      const riderData = JSON.parse(saved);
+      return riderData.user_id || riderData.userId || riderData.id || null;
+    } catch (err) {
+      console.warn('Unable to parse riderData:', err);
+      return null;
+    }
+  };
+  const riderId = getRiderId(); // Get logged in rider ID
 
   // --- SOCKET AND LOCATION ---
   const [socket, setSocket] = useState(null);
@@ -40,17 +51,27 @@ const RiderDashboard = ({ onLogout }) => {
     newSocket.on('connect', () => {
       console.log('Rider socket connected:', newSocket.id);
       const riderData = JSON.parse(localStorage.getItem('riderData') || '{}');
-      if (riderData.user_id || riderData.id) {
+      const userId = riderData.user_id || riderData.userId || riderData.id;
+      const riderSocketId = riderData.rider_id || riderData.riderId || riderData.user_id || riderData.id;
+      if (userId) {
         newSocket.emit('rider_login', {
-          user_id: riderData.user_id || riderData.id,
-          rider_id: riderData.seller_id || riderData.id
+          user_id: userId,
+          rider_id: riderSocketId
         });
       }
     });
 
-    newSocket.on('rider_order_assigned', (data) => {
+    newSocket.on('rider_order_assigned', async (data) => {
       console.log('Rider assignment event received:', data);
       alert('A rider order assignment was received. Check the dashboard for details.');
+      if (data.order) {
+        setCurrentDelivery(data.order);
+        setDeliveryStatus('accepted');
+        setNavStatus('idle');
+        setProgress(0);
+        setEnteredOtp('');
+        setActiveTab('active');
+      }
     });
 
     return () => {
