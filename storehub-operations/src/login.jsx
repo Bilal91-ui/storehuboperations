@@ -55,7 +55,9 @@ function Login({ onClose, onSwitchToSignup, onLoginSuccess }) {
         role: data.role || "seller",
       }
 
-      localStorage.setItem('sellerData', JSON.stringify(userData))
+      // Store based on role to avoid conflicts
+      const storageKey = data.role === 'rider' ? 'riderData' : 'sellerData';
+      localStorage.setItem(storageKey, JSON.stringify(userData))
       localStorage.setItem('authToken', data.token || '')
       
       onLoginSuccess(userData)

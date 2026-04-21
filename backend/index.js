@@ -11,6 +11,8 @@ const multer = require("multer");
 const path = require("path");
 const bcrypt = require("bcrypt");
 const nodemailer = require("nodemailer");
+const { createServer } = require("http");
+const { Server } = require("socket.io");
 
 console.log("Loaded NODE_ENV:", process.env.NODE_ENV);
 console.log("All env vars starting with NODE:", Object.keys(process.env).filter(key => key.startsWith('NODE')));
@@ -29,6 +31,17 @@ io.on("connection", (socket) => {
 });
 app.use(cors());
 app.use(express.json());
+
+// Create HTTP server
+const server = createServer(app);
+
+// Initialize Socket.IO
+const io = new Server(server, {
+  cors: {
+    origin: "*", // Allow all origins for now, adjust as needed
+    methods: ["GET", "POST"]
+  }
+});
 
 // ================= EMAIL SERVICE =================
 const transporter = nodemailer.createTransport({
@@ -741,6 +754,100 @@ app.post("/api/orders", (req, res) => {
               io.emit("new_order_available", newOrderTask); 
               // ------------------------------------
 
+=======
+              
+              // Fetch sellers for products in this order to send notifications
+              const productIds = cart_items.map(item => item.product_id || item.id);
+              console.log(`\n🛒 [Order Created] Order #${order_number} (ID: ${orderId})`);
+              console.log(`   Product IDs: [${productIds.join(', ')}]`);
+              console.log(`   Customer: ${customer_name}`);
+              
+              const sellerQuery = `
+                SELECT DISTINCT p.seller_id, s.user_id, s.business_name, u.email, u.full_name
+                FROM products p
+                LEFT JOIN sellers s ON p.seller_id = s.id
+                LEFT JOIN users u ON s.user_id = u.id
+                WHERE p.id IN (?)
+              `;
+              
+              db.query(sellerQuery, [productIds], (err, sellerRows) => {
+                if (err) {
+                  console.error("❌ Error fetching sellers:", err);
+                } else {
+                  console.log(`   Found sellers: ${sellerRows.length}`);
+                  
+                  // Send notifications to all sellers whose products are in this order
+                  const notificationData = {
+                    order_id: orderId,
+                    order_number: order_number,
+                    customer_name: customer_name,
+                    customer_phone: customer_phone,
+                    customer_email: customer_email,
+                    total_amount: total_amount,
+                    created_at: new Date().toISOString(),
+                    items: cart_items
+                  };
+
+                  sellerRows.forEach(seller => {
+                    if (!seller.seller_id) {
+                      console.log(`   ⚠️  Product has no seller_id, skipping`);
+                      return;
+                    }
+
+                    if (!seller.user_id) {
+                      console.log(`   ⚠️  Seller record missing user_id for seller ${seller.business_name}`);
+                    }
+
+                    // Also send email notification to seller if configured
+                    if (seller.email && transporter) {
+                      const mailOptions = {
+                        from: process.env.EMAIL_USER,
+                        to: seller.email,
+                        subject: `New Order #${order_number} - ${customer_name}`,
+                        text: `
+Dear ${seller.full_name},
+
+You have received a new order!
+
+Order Details:
+- Order Number: ${order_number}
+- Order ID: ${orderId}
+- Customer: ${customer_name}
+- Phone: ${customer_phone}
+- Total Amount: Rs ${total_amount}
+- Payment Method: ${payment_method}
+- Delivery Address: ${shipping_address}
+
+Please log in to your StoreHub dashboard to view and accept this order.
+
+Best regards,
+StoreHub Team
+                        `
+                      };
+                      
+                      transporter.sendMail(mailOptions, (mailErr) => {
+                        if (mailErr) {
+                          console.error(`[ERROR] Failed to send email to seller ${seller.email}:`, mailErr.message);
+                        } else {
+                          console.log(`[SUCCESS] Email notification sent to ${seller.email}`);
+                        }
+                      });
+                    }
+                  });
+
+                  // Broadcast notification to all online sellers as a fallback so any connected seller sees the order alert
+                  if (sellerConnections.size > 0) {
+                    sellerConnections.forEach((sellerSocket, userId) => {
+                      sellerSocket.emit('new_order_notification', notificationData);
+                    });
+                    console.log(`   🔔 Broadcasted new_order_notification to ${sellerConnections.size} connected sellers`);
+                  } else {
+                    console.log('   ℹ️  No seller sockets currently connected for broadcast');
+                  }
+                }
+              });
+              
+>>>>>>> e5a3eebcc548fe45c232f9240c93c42fb42de777
               res.json({
                 message: "Order created successfully",
                 order_id: orderId,

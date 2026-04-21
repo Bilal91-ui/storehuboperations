@@ -25,10 +25,43 @@ const RiderDashboard = ({ onLogout }) => {
   // --- DATA: NEW TASKS ---
   const [tasks, setTasks] = useState([]);
   //new code
-const riderId = localStorage.getItem("user_id"); // Get logged in rider ID
+  const riderId = localStorage.getItem("user_id"); // Get logged in rider ID
+
+  // --- SOCKET AND LOCATION ---
+  const [socket, setSocket] = useState(null);
+  const [location, setLocation] = useState(null);
+  const [locationError, setLocationError] = useState(null);
+
+  // Initialize socket
+  useEffect(() => {
+    const newSocket = io('http://localhost:5000');
+    setSocket(newSocket);
+
+    newSocket.on('connect', () => {
+      console.log('Rider socket connected:', newSocket.id);
+      const riderData = JSON.parse(localStorage.getItem('riderData') || '{}');
+      if (riderData.user_id || riderData.id) {
+        newSocket.emit('rider_login', {
+          user_id: riderData.user_id || riderData.id,
+          rider_id: riderData.seller_id || riderData.id
+        });
+      }
+    });
+
+    newSocket.on('rider_order_assigned', (data) => {
+      console.log('Rider assignment event received:', data);
+      alert('A rider order assignment was received. Check the dashboard for details.');
+    });
+
+    return () => {
+      newSocket.disconnect();
+    };
+  }, []);
 
   // --- FETCH INITIAL TASKS & LISTEN FOR REAL-TIME ---
   useEffect(() => {
+    if (!socket) return;
+
     const fetchTasks = async () => {
       try {
         const response = await axios.get('http://localhost:5000/api/rider/available-tasks');
@@ -39,7 +72,26 @@ const riderId = localStorage.getItem("user_id"); // Get logged in rider ID
     };
 
     fetchTasks();
+<<<<<<< HEAD
   }, []);
+=======
+
+    // Socket: Listen for new orders placed by customers
+    socket.on("new_order_available", (newOrder) => {
+      setTasks((prev) => [newOrder, ...prev]);
+    });
+
+    // Socket: Remove order if another rider accepts it
+    socket.on("task_taken", (orderId) => {
+      setTasks((prev) => prev.filter(t => t.id !== orderId));
+    });
+
+    return () => {
+      socket.off("new_order_available");
+      socket.off("task_taken");
+    };
+  }, [socket]);
+>>>>>>> 44a62cb4db9c7b849174dc56455faa8a90fba2ac
 
   // --- DATA: EARNINGS HISTORY (Req 5 & 6) ---
   const [earningsFilter, setEarningsFilter] = useState('weekly');
@@ -67,11 +119,6 @@ const riderId = localStorage.getItem("user_id"); // Get logged in rider ID
   const [navStatus, setNavStatus] = useState('idle'); 
   const [progress, setProgress] = useState(0); 
   const [enteredOtp, setEnteredOtp] = useState('');
-
-  // --- SOCKET AND LOCATION ---
-  const [socket, setSocket] = useState(null);
-  const [location, setLocation] = useState(null);
-  const [locationError, setLocationError] = useState(null);
 
   // --- HANDLERS: TASKS ---
   const handleViewDetails = (task) => setSelectedTask(task);
@@ -128,8 +175,9 @@ const riderId = localStorage.getItem("user_id"); // Get logged in rider ID
     return () => clearInterval(interval);
   }, [navStatus, deliveryStatus]);
 
-  // --- SOCKET AND LOCATION SETUP ---
+  // --- LOCATION SETUP ---
   useEffect(() => {
+<<<<<<< HEAD
     // Connect to Socket.IO
     const newSocket = io('http://localhost:5000');
     setSocket(newSocket);
@@ -172,10 +220,13 @@ const riderId = localStorage.getItem("user_id"); // Get logged in rider ID
       setTasks((prev) => prev.filter(t => t.id !== orderId));
     });
 
+=======
+>>>>>>> 44a62cb4db9c7b849174dc56455faa8a90fba2ac
     // Get initial location
     if (navigator.geolocation) {
       const sendLocation = (loc) => {
-        const saved = localStorage.getItem('sellerData') || localStorage.getItem('storehubOperationsSession');
+        if (!socket) return;
+        const saved = localStorage.getItem('riderData');
         let userId = null;
         if (saved) {
           try {
@@ -186,7 +237,7 @@ const riderId = localStorage.getItem("user_id"); // Get logged in rider ID
           }
         }
 
-        newSocket.emit('rider_location', {
+        socket.emit('rider_location', {
           user_id: userId,
           riderId: userId || 'rider123',
           location: loc,
@@ -224,16 +275,19 @@ const riderId = localStorage.getItem("user_id"); // Get logged in rider ID
 
       // Cleanup
       return () => {
+<<<<<<< HEAD
         newSocket.off("new_order_available");
         newSocket.off("task_taken");
         newSocket.off("rider_order_assigned");
         newSocket.disconnect();
+=======
+>>>>>>> 44a62cb4db9c7b849174dc56455faa8a90fba2ac
         navigator.geolocation.clearWatch(watchId);
       };
     } else {
       setLocationError('Geolocation is not supported by this browser.');
     }
-  }, []);
+  }, [socket]);
 
   const handleStatusUpdate = (newStatus) => {
     setDeliveryStatus(newStatus);
