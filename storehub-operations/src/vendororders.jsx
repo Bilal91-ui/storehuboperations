@@ -82,11 +82,19 @@ const VendorOrders = () => {
     };
   }, []);
 
+  const normalizeStatus = (status) => {
+    const raw = String(status || 'pending').trim().toLowerCase();
+    return raw.charAt(0).toUpperCase() + raw.slice(1);
+  };
+
   const fetchOrders = async () => {
     try {
       const res = await fetch("http://localhost:5000/api/vendor/orders");
       const data = await res.json();
-      setOrders(data);
+      setOrders(data.map(order => ({
+        ...order,
+        status: normalizeStatus(order.status),
+      })));
     } catch (error) {
       console.error("Error fetching orders:", error);
     }
@@ -152,9 +160,14 @@ const VendorOrders = () => {
       }
 
       const sellerData = JSON.parse(saved);
-      const sellerId = sellerData.seller_id || sellerData.sellerId;
+      console.log('Seller session data:', sellerData); // DEBUG
+      
+      // Try multiple key variations
+      const sellerId = sellerData.seller_id || sellerData.sellerId || sellerData.id || sellerData.user_id;
+      
       if (!sellerId) {
-        alert('Seller ID not found in session.');
+        console.error('Seller ID extraction failed. Available keys:', Object.keys(sellerData)); // DEBUG
+        alert('Seller ID not found in session. Please logout and login again.');
         return;
       }
 
@@ -170,8 +183,33 @@ const VendorOrders = () => {
         return;
       }
 
+      const updatedOrders = orders.map(o =>
+        o.id === orderId ? { ...o, status: 'Processing' } : o
+      );
+      setOrders(updatedOrders);
+      if (selectedOrder && selectedOrder.id === orderId) {
+        setSelectedOrder({ ...selectedOrder, status: 'Processing' });
+      }
+
+      // ✅ Notify nearest riders via Socket.IO
+      if (socket) {
+        const orderData = orders.find(o => o.id === orderId);
+        if (orderData) {
+          socket.emit('order_accepted_for_delivery', {
+            order_id: orderId,
+            seller_id: sellerId,
+            customer_name: orderData.customer,
+            total_amount: orderData.total,
+            delivery_address: orderData.address,
+            items: orderData.items,
+            created_at: new Date().toISOString()
+          });
+          console.log('✅ Rider notification emitted for order:', orderId);
+        }
+      }
+
       fetchOrders();
-      showNotification(`Order #${orderId} accepted. Nearest rider notified.`);
+      showNotification(`Order #${orderId} accepted. Nearest riders notified.`);
     } catch (error) {
       console.error(error);
       alert('Failed to accept order');
@@ -183,9 +221,9 @@ const VendorOrders = () => {
 
   // Helper to render buttons based on status
   const renderActionButtons = (order) => {
-    const status = order.status || 'pending';
+    const status = (order.status || 'pending').toLowerCase();
     switch (status) {
-      case 'Pending':
+      case 'pending':
         return (
           <>
             <button className="submit-button btn-accept" onClick={() => handleAcceptOrder(order.id)} disabled={loading}>
@@ -196,13 +234,13 @@ const VendorOrders = () => {
             </button>
           </>
         );
-      case 'Processing':
+      case 'processing':
         return (
           <button className="submit-button btn-process" onClick={() => handleStatusChange(order.id, 'Shipped')} disabled={loading}>
             {loading ? 'Processing...' : '📦 Mark as Shipped'}
           </button>
         );
-      case 'Shipped':
+      case 'shipped':
         return (
           <button className="submit-button btn-complete" onClick={() => handleStatusChange(order.id, 'Completed')} disabled={loading}>
             {loading ? 'Processing...' : '🎉 Mark as Completed'}

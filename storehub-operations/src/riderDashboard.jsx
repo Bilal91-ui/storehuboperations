@@ -1,5 +1,5 @@
 // RiderDashboard.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './riderDashboard.css';
 import axios from 'axios';
 import { io } from 'socket.io-client';
@@ -17,14 +17,28 @@ L.Icon.Default.mergeOptions({
 
 const RiderDashboard = ({ onLogout }) => {
   // --- GLOBAL STATE ---
-  const [isOnline, setIsOnline] = useState(true);
+  const [isOnline, setIsOnline] = useState(() => {
+    const saved = localStorage.getItem('riderOnline');
+    return saved !== null ? JSON.parse(saved) : true;
+  });
   const [activeTab, setActiveTab] = useState('new'); 
   const [selectedTask, setSelectedTask] = useState(null); // Task Modal
   const [selectedTxn, setSelectedTxn] = useState(null);   // Transaction Modal
 
   // --- DATA: NEW TASKS ---
   const [tasks, setTasks] = useState([]);
-  //new code
+  const [onlineSince, setOnlineSince] = useState(() => {
+    const saved = localStorage.getItem('riderOnlineSince');
+    return saved ? new Date(saved) : new Date();
+  });
+  const prevOnlineRef = useRef(isOnline);
+
+  const isTaskVisible = (task) => {
+    if (!task.created_at) return true;
+    const createdAt = new Date(task.created_at);
+    return createdAt >= onlineSince;
+  };
+
   const getRiderId = () => {
     const saved = localStorage.getItem('riderData');
     if (!saved) return null;
@@ -43,8 +57,16 @@ const RiderDashboard = ({ onLogout }) => {
   const [location, setLocation] = useState(null);
   const [locationError, setLocationError] = useState(null);
 
-  // Initialize socket
+  // Initialize socket only when the rider is online
   useEffect(() => {
+    if (!isOnline) {
+      if (socket) {
+        socket.disconnect();
+        setSocket(null);
+      }
+      return;
+    }
+
     const newSocket = io('http://localhost:5000');
     setSocket(newSocket);
 
@@ -74,41 +96,104 @@ const RiderDashboard = ({ onLogout }) => {
       }
     });
 
+    newSocket.on('disconnect', () => {
+      console.log('Rider socket disconnected');
+    });
+
     return () => {
       newSocket.disconnect();
     };
-  }, []);
+  }, [isOnline]);
+
+  useEffect(() => {
+    localStorage.setItem('riderOnline', JSON.stringify(isOnline));
+    if (isOnline && prevOnlineRef.current === false) {
+      const now = new Date();
+      setOnlineSince(now);
+      localStorage.setItem('riderOnlineSince', now.toISOString());
+    }
+    if (!isOnline) {
+      setTasks([]);
+    }
+    prevOnlineRef.current = isOnline;
+  }, [isOnline]);
 
   // --- FETCH INITIAL TASKS & LISTEN FOR REAL-TIME ---
   useEffect(() => {
     if (!socket) return;
+    if (!isOnline) {
+      setTasks([]);
+      return;
+    }
 
     const fetchTasks = async () => {
       try {
         const response = await axios.get('http://localhost:5000/api/rider/available-tasks');
-        setTasks(response.data);
+        const visibleTasks = response.data.filter(isTaskVisible);
+        setTasks(prev => {
+          const newTasks = visibleTasks.filter(t => !prev.some(p => p.id === t.id));
+          return [...prev, ...newTasks];
+        });
       } catch (err) {
         console.error("Error fetching tasks:", err);
       }
     };
 
-    fetchTasks();
+    const fetchCurrentTask = async () => {
+      if (!riderId) return;
+      try {
+        const response = await axios.get(`http://localhost:5000/api/rider/current-task/${riderId}`);
+        if (response.data && response.data.id) {
+          setCurrentDelivery(response.data);
+          setDeliveryStatus('accepted');
+          setNavStatus('idle');
+          setProgress(0);
+          setEnteredOtp('');
+          setActiveTab('active');
+        }
+      } catch (err) {
+        console.error("Error fetching current task:", err);
+      }
+    };
 
-    // Socket: Listen for new orders placed by customers
-    socket.on("new_order_available", (newOrder) => {
-      setTasks((prev) => [newOrder, ...prev]);
+    fetchTasks();
+    fetchCurrentTask();
+
+    // Socket: Listen for orders accepted by sellers (for delivery pickup)
+    socket.on("order_accepted_for_delivery", (orderData) => {
+      if (!isOnline) {
+        console.log('Rider offline, ignoring new delivery task');
+        return;
+      }
+      console.log('📦 New delivery task available:', orderData);
+      const task = {
+        id: orderData.order_id,
+        ordernumber: orderData.order_number,
+        earnings: orderData.total_amount ? `$${(orderData.total_amount * 0.1).toFixed(2)}` : '$0.00',
+        customer: orderData.customer_name,
+        dropoffAddr: orderData.delivery_address,
+        restaurant: "StoreHub Store",
+        pickupAddr: "Central Store",
+        distance: "2.5 km",
+        items: orderData.items || [],
+        status: 'available',
+        type: 'delivery',
+        created_at: orderData.created_at
+      };
+      setTasks((prev) => [task, ...prev]);
     });
 
     // Socket: Remove order if another rider accepts it
     socket.on("task_taken", (orderId) => {
+      if (!isOnline) return;
       setTasks((prev) => prev.filter(t => t.id !== orderId));
     });
 
     return () => {
-      socket.off("new_order_available");
+      socket.off("order_accepted_for_delivery");
       socket.off("task_taken");
     };
-  }, [socket]);
+  }, [socket, riderId, isOnline]);
 
   // --- DATA: EARNINGS HISTORY (Req 5 & 6) ---
   const [earningsFilter, setEarningsFilter] = useState('weekly');

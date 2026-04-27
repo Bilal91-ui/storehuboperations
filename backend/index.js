@@ -304,6 +304,12 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Broadcast order accepted for delivery to all riders
+  socket.on('order_accepted_for_delivery', (data) => {
+    console.log('Broadcasting order accepted for delivery:', data);
+    io.emit('order_accepted_for_delivery', data);
+  });
+
   socket.on('disconnect', () => {
     console.log('❌ [Socket Disconnect] User disconnected:', socket.id);
     // Remove from seller and rider connections
@@ -521,12 +527,52 @@ app.post("/api/auth/login", async (req, res) => {
       if (user.registration_status !== "approved")
         return res.status(403).json({ message: "Account is pending admin approval." });
 
-      res.json({
-        message: "Login success",
-        user_id: user.id,
-        role_id: user.role_id,
-        role: user.role_name // <-- Asal DB role frontend ko bhejein
-      });
+      // If user is a seller, fetch their seller_id
+      if (user.role_name === "seller") {
+        db.query(
+          "SELECT id as seller_id FROM sellers WHERE user_id = ?",
+          [user.id],
+          (sellerErr, sellerRows) => {
+            const seller_id = sellerRows && sellerRows.length > 0 ? sellerRows[0].seller_id : null;
+            res.json({
+              message: "Login success",
+              user_id: user.id,
+              seller_id: seller_id,
+              role_id: user.role_id,
+              role: user.role_name,
+              email: user.email,
+              full_name: user.full_name
+            });
+          }
+        );
+      } else if (user.role_name === "rider") {
+        // If user is a rider, fetch their rider_id
+        db.query(
+          "SELECT id as rider_id FROM riders WHERE user_id = ?",
+          [user.id],
+          (riderErr, riderRows) => {
+            const rider_id = riderRows && riderRows.length > 0 ? riderRows[0].rider_id : null;
+            res.json({
+              message: "Login success",
+              user_id: user.id,
+              rider_id: rider_id,
+              role_id: user.role_id,
+              role: user.role_name,
+              email: user.email,
+              full_name: user.full_name
+            });
+          }
+        );
+      } else {
+        res.json({
+          message: "Login success",
+          user_id: user.id,
+          role_id: user.role_id,
+          role: user.role_name,
+          email: user.email,
+          full_name: user.full_name
+        });
+      }
     }
   );
 });
@@ -684,6 +730,42 @@ app.get("/api/vendor/orders", (req, res) => {
 
       res.json(formattedOrders);
     });
+  });
+});
+
+app.post("/api/vendor/orders/:orderId/accept", (req, res) => {
+  const { orderId } = req.params;
+  const { sellerId } = req.body;
+
+  if (!sellerId) {
+    return res.status(400).json({ message: "sellerId is required" });
+  }
+
+  db.query("SELECT * FROM orders WHERE id = ?", [orderId], (selectErr, rows) => {
+    if (selectErr) {
+      console.error("Fetch order error:", selectErr);
+      return res.status(500).json({ message: "Database error" });
+    }
+    if (!rows.length) {
+      return res.status(404).json({ message: "Order not found." });
+    }
+
+    db.query(
+      "UPDATE orders SET order_status = 'processing', seller_id = ? WHERE id = ?",
+      [sellerId, orderId],
+      (updateErr, result) => {
+        if (updateErr) {
+          console.error("Accept order update error:", updateErr);
+          return res.status(500).json({ message: "Database error" });
+        }
+        if (result.affectedRows === 0) {
+          return res.status(404).json({ message: "Order not found or already processed." });
+        }
+
+        // Order accepted successfully, riders will be notified via socket broadcast
+        res.json({ message: "Order accepted successfully. Riders notified." });
+      }
+    );
   });
 });
 
@@ -1226,7 +1308,7 @@ app.get("/api/rider/available-tasks", (req, res) => {
   const query = `
     SELECT id, order_number, total_amount, customer_name, shipping_address, created_at 
     FROM orders 
-    WHERE order_status = 'confirmed' AND rider_id IS NULL
+    WHERE order_status IN ('processing', 'accepted') AND rider_id IS NULL
     ORDER BY created_at DESC
   `;
   db.query(query, (err, rows) => {
@@ -1245,6 +1327,36 @@ app.get("/api/rider/available-tasks", (req, res) => {
       items: [] 
     }));
     res.json(tasks);
+  });
+});
+
+app.get("/api/rider/current-task/:riderId", (req, res) => {
+  const { riderId } = req.params;
+  const query = `
+    SELECT id, order_number, total_amount, customer_name, shipping_address, created_at, order_status
+    FROM orders
+    WHERE rider_id = ? AND order_status IN ('accepted','processing','shipped')
+    ORDER BY created_at DESC
+    LIMIT 1
+  `;
+
+  db.query(query, [riderId], (err, rows) => {
+    if (err) return res.status(500).json({ message: "DB Error", error: err.message });
+    if (rows.length === 0) return res.json({});
+    const order = rows[0];
+    res.json({
+      id: order.id,
+      order_number: order.order_number,
+      earnings: `$${(order.total_amount * 0.1).toFixed(2)}`,
+      customer: order.customer_name,
+      dropoffAddr: order.shipping_address,
+      restaurant: "StoreHub Store",
+      pickupAddr: "Central Store",
+      distance: "2.5 km",
+      items: [],
+      order_status: order.order_status,
+      created_at: order.created_at
+    });
   });
 });
 
@@ -1429,5 +1541,42 @@ app.get("/api/system-stats", async (req, res) => {
     res.status(500).json({ message: "Could not fetch system stats" });
   }
 });
+
+// 2. Accept a task
+app.post("/api/rider/accept-task", (req, res) => {
+  const { order_id, rider_id } = req.body;
+
+  if (!order_id || !rider_id) {
+    return res.status(400).json({ message: "order_id and rider_id are required" });
+  }
+
+  // Check if order is still available
+  db.query("SELECT * FROM orders WHERE id = ? AND rider_id IS NULL AND order_status = 'processing'", [order_id], (err, rows) => {
+    if (err) return res.status(500).json({ message: "DB Error", error: err.message });
+    if (rows.length === 0) {
+      return res.status(404).json({ message: "Order not available or already taken" });
+    }
+
+    // Assign to rider
+    db.query("UPDATE orders SET rider_id = ?, order_status = 'accepted' WHERE id = ?", [rider_id, order_id], (updateErr, result) => {
+      if (updateErr) return res.status(500).json({ message: "Failed to accept task" });
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ message: "Order not found" });
+      }
+
+      // Notify the rider that the order is assigned
+      const riderSocket = riderConnections.get(rider_id);
+      if (riderSocket) {
+        riderSocket.emit('rider_order_assigned', { order: rows[0] });
+      }
+
+      // Notify other riders that the order is taken
+      io.emit('order_taken', { orderId: order_id });
+
+      res.json({ message: "Task accepted successfully!" });
+    });
+  });
+});
+
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));

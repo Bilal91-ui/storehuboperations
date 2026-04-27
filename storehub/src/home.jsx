@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react"
+import { useNavigate, useLocation, useParams } from "react-router-dom"
 import "./home.css"
 import Login from "./login"
 import Signup from "./signup"
@@ -8,7 +9,60 @@ import OrderHistory from "./OrderHistory"
 import OrderDetails from "./OrderDetails"
 import AccountSettings from "./accountsettings"
 
+const mockOrderHistory = [
+  {
+    id: 123456,
+    orderId: "ORD-123456",
+    date: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
+    status: "delivered",
+    total: 489.97,
+    items: [
+      { name: "Wireless Headphones", quantity: 1, price: 89.99 },
+      { name: "Smart Watch Pro", quantity: 2, price: 199.99 }
+    ],
+    canCancel: false
+  },
+  {
+    id: 234567,
+    orderId: "ORD-234567",
+    date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+    status: "shipped",
+    total: 159.99,
+    items: [
+      { name: "Premium Coffee Maker", quantity: 1, price: 149.99 }
+    ],
+    canCancel: false
+  },
+  {
+    id: 345678,
+    orderId: "ORD-345678",
+    date: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
+    status: "processing",
+    total: 179.98,
+    items: [
+      { name: "Running Shoes", quantity: 1, price: 79.99 },
+      { name: "Wireless Headphones", quantity: 1, price: 89.99 }
+    ],
+    canCancel: true
+  },
+  {
+    id: 456789,
+    orderId: "ORD-456789",
+    date: new Date(Date.now() - 12 * 60 * 60 * 1000),
+    status: "pending",
+    total: 299.99,
+    items: [
+      { name: "Smart Watch Pro", quantity: 1, price: 199.99 },
+      { name: "Running Shoes", quantity: 1, price: 79.99 }
+    ],
+    canCancel: true
+  }
+]
+
 function Home() {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const params = useParams()
 
   const [isCartOpen, setIsCartOpen] = useState(false)
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false)
@@ -27,6 +81,50 @@ function Home() {
   const [searchQuery, setSearchQuery] = useState('')
 
   const [cartItems, setCartItems] = useState([])
+
+  const findOrderById = (orderId) => {
+    if (!orderId) return null
+    return mockOrderHistory.find((order) => order.orderId.toLowerCase() === orderId.toLowerCase()) || null
+  }
+
+  useEffect(() => {
+    const path = location.pathname
+
+    setShowLogin(path === "/login")
+    setShowSignup(path === "/signup")
+    setShowCheckout(path === "/checkout")
+    setShowOrderTracking(path === "/track-order")
+    setShowOrderHistory(path === "/orders")
+    setShowAccountSettings(path === "/account")
+
+    if (path.startsWith("/order/") && params.orderId) {
+      const resolvedOrder = findOrderById(params.orderId)
+      setSelectedOrder(resolvedOrder)
+      setShowOrderDetails(Boolean(resolvedOrder))
+    } else {
+      setShowOrderDetails(false)
+      setSelectedOrder(null)
+    }
+
+    if (path !== "/track-order") {
+      setTrackingOrderId("")
+    }
+  }, [location.pathname, params.orderId])
+
+  const closeModal = () => {
+    navigate("/home")
+  }
+  const openLogin = () => navigate("/login")
+  const openSignup = () => navigate("/signup")
+  const openCheckout = () => navigate("/checkout")
+  const openOrderTracking = () => navigate("/track-order")
+  const openOrderHistory = () => navigate("/orders")
+  const openAccountSettings = () => navigate("/account")
+  const openOrderDetails = (order) => {
+    if (order?.orderId) {
+      navigate(`/order/${order.orderId}`)
+    }
+  }
 
   const categories = [
     { id: "1", name: "Meat", },
@@ -226,16 +324,17 @@ function Home() {
 
   const handleLoginSuccess = (userData) => {
     setUser(userData)
-    setShowLogin(false)
+    closeModal()
   }
 
   const handleSignupSuccess = (userData) => {
     setUser(userData)
-    setShowSignup(false)
+    closeModal()
   }
 
   const handleLogout = () => {
     setUser(null)
+    navigate("/home")
   }
 
   const handleUpdateUser = (updatedUser) => {
@@ -264,10 +363,10 @@ function Home() {
               </>
             ) : (
               <>
-                <button className="btn-secondary" onClick={() => setShowLogin(true)}>
+                <button className="btn-secondary" onClick={openLogin}>
                   Login
                 </button>
-                <button className="btn-primary" onClick={() => setShowSignup(true)}>
+                <button className="btn-primary" onClick={openSignup}>
                   Sign Up
                 </button>
               </>
@@ -498,7 +597,7 @@ function Home() {
                       <span>Total:</span>
                       <span className="total-amount">{cartTotal.toFixed(2)}</span>
                     </div>
-                    <button className="checkout-btn" onClick={() => setShowCheckout(true)}>Proceed to Checkout</button>
+                    <button className="checkout-btn" onClick={openCheckout}>Proceed to Checkout</button>
                   </div>
                 </>
               )}
@@ -509,22 +608,16 @@ function Home() {
 
       {showLogin && (
         <Login
-          onClose={() => setShowLogin(false)}
-          onSwitchToSignup={() => {
-            setShowLogin(false)
-            setShowSignup(true)
-          }}
+          onClose={closeModal}
+          onSwitchToSignup={openSignup}
           onLoginSuccess={handleLoginSuccess}
         />
       )}
 
       {showSignup && (
         <Signup
-          onClose={() => setShowSignup(false)}
-          onSwitchToLogin={() => {
-            setShowSignup(false)
-            setShowLogin(true)
-          }}
+          onClose={closeModal}
+          onSwitchToLogin={openLogin}
           onSignupSuccess={handleSignupSuccess}
         />
       )}
@@ -532,10 +625,10 @@ function Home() {
       {showCheckout && (
         <Checkout
           cartItems={cartItems}
-          onBack={() => setShowCheckout(false)}
+          onBack={closeModal}
           onTrackOrder={(orderId) => {
             setTrackingOrderId(orderId)
-            setShowOrderTracking(true)
+            openOrderTracking()
           }}
         />
       )}
@@ -543,8 +636,8 @@ function Home() {
       {showOrderTracking && (
         <OrderTracking
           onClose={() => {
-            setShowOrderTracking(false)
             setTrackingOrderId("")
+            closeModal()
           }}
           initialOrderId={trackingOrderId}
         />
@@ -552,11 +645,9 @@ function Home() {
 
       {showOrderHistory && (
         <OrderHistory
-          onClose={() => setShowOrderHistory(false)}
+          onClose={closeModal}
           onViewOrderDetails={(order) => {
-            setSelectedOrder(order)
-            setShowOrderDetails(true)
-            setShowOrderHistory(false)
+            openOrderDetails(order)
           }}
         />
       )}
@@ -565,9 +656,8 @@ function Home() {
         <OrderDetails
           order={selectedOrder}
           onClose={() => {
-            setShowOrderDetails(false)
             setSelectedOrder(null)
-            setShowOrderHistory(true) // Go back to order history
+            openOrderHistory()
           }}
           onOrderCancelled={(cancelledOrder) => {
             setSelectedOrder(cancelledOrder)
@@ -579,7 +669,7 @@ function Home() {
 
       {showAccountSettings && (
         <AccountSettings
-          onClose={() => setShowAccountSettings(false)}
+          onClose={closeModal}
           user={user}
           onUpdateUser={handleUpdateUser}
         />
@@ -602,7 +692,7 @@ function Home() {
                   className="orders-sidebar-btn"
                   onClick={() => {
                     setIsOrdersSidebarOpen(false)
-                    setShowOrderHistory(true)
+                    openOrderHistory()
                   }}
                 >
                   📋 Order History
@@ -613,7 +703,7 @@ function Home() {
                   className="orders-sidebar-btn"
                   onClick={() => {
                     setIsOrdersSidebarOpen(false)
-                    setShowOrderTracking(true)
+                    openOrderTracking()
                   }}
                 >
                   📦 Track Order
@@ -624,7 +714,7 @@ function Home() {
                   className="orders-sidebar-btn"
                   onClick={() => {
                     setIsOrdersSidebarOpen(false)
-                    setShowAccountSettings(true)
+                    openAccountSettings()
                   }}
                 >
                   ⚙️ Account Settings
