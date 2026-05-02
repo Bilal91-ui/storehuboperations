@@ -304,10 +304,12 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Broadcast order accepted for delivery to all riders
+  // Broadcast order accepted for delivery only to riders currently connected
   socket.on('order_accepted_for_delivery', (data) => {
-    console.log('Broadcasting order accepted for delivery:', data);
-    io.emit('order_accepted_for_delivery', data);
+    console.log('Broadcasting order accepted for delivery to online riders:', data);
+    riderConnections.forEach((riderSocket) => {
+      riderSocket.emit('order_accepted_for_delivery', data);
+    });
   });
 
   socket.on('disconnect', () => {
@@ -741,6 +743,11 @@ app.post("/api/vendor/orders/:orderId/accept", (req, res) => {
     return res.status(400).json({ message: "sellerId is required" });
   }
 
+  // Prevent accepting order unless at least one rider is online/available.
+  if (riderConnections.size === 0) {
+    return res.status(409).json({ message: "No riders are currently available. Please try again when a rider is online." });
+  }
+
   db.query("SELECT * FROM orders WHERE id = ?", [orderId], (selectErr, rows) => {
     if (selectErr) {
       console.error("Fetch order error:", selectErr);
@@ -762,7 +769,7 @@ app.post("/api/vendor/orders/:orderId/accept", (req, res) => {
           return res.status(404).json({ message: "Order not found or already processed." });
         }
 
-        // Order accepted successfully, riders will be notified via socket broadcast
+        // Order accepted successfully, riders will be notified via socket broadcast to online riders only.
         res.json({ message: "Order accepted successfully. Riders notified." });
       }
     );
