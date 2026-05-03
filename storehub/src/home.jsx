@@ -111,6 +111,23 @@ function Home() {
     }
   }, [location.pathname, params.orderId])
 
+  // Check for existing JWT token on app load
+  useEffect(() => {
+    const token = localStorage.getItem('customerToken')
+    const userData = localStorage.getItem('customerData')
+    
+    if (token && userData) {
+      try {
+        const parsedUser = JSON.parse(userData)
+        setUser(parsedUser)
+      } catch (error) {
+        console.error('Error parsing stored user data:', error)
+        localStorage.removeItem('customerToken')
+        localStorage.removeItem('customerData')
+      }
+    }
+  }, [])
+
   const closeModal = () => {
     navigate("/home")
   }
@@ -334,6 +351,8 @@ function Home() {
 
   const handleLogout = () => {
     setUser(null)
+    localStorage.removeItem('customerToken')
+    localStorage.removeItem('customerData')
     navigate("/home")
   }
 

@@ -189,3 +189,16 @@ CREATE TABLE IF NOT EXISTS email_verification (
     last_attempt_at TIMESTAMP NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+-- ============================================
+-- 8. TEMP REGISTRATIONS TABLE (OTP signup tracking)
+-- ============================================
+CREATE TABLE IF NOT EXISTS temp_registrations (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    otp_code VARCHAR(6) NOT NULL,
+    user_data JSON NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_email (email)
+);

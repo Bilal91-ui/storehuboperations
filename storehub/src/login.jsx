@@ -10,6 +10,8 @@ function Login({ onClose, onSwitchToSignup, onLoginSuccess }) {
   })
   const [error, setError] = useState("")
 
+  const [loading, setLoading] = useState(false)
+
   const handleChange = (e) => {
     setFormData({
       ...formData,
@@ -18,23 +20,51 @@ function Login({ onClose, onSwitchToSignup, onLoginSuccess }) {
     setError("")
   }
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
+    setLoading(true)
+    setError("")
 
     // Basic validation
-    if (!formData.email || !formData.password) {
+    if (!formData.email?.trim() || !formData.password?.trim()) {
       setError("Please fill in all fields")
+      setLoading(false)
       return
     }
 
-    // Simulate login (in real app, this would call an API)
-    const userData = {
-      email: formData.email,
-      name: formData.email.split("@")[0],
-      role: "customer", // Default role for demo
-    }
+    try {
+      const response = await fetch("http://localhost:5000/api/auth/customer/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: formData.email.trim(),
+          password: formData.password,
+        }),
+      })
 
-    onLoginSuccess(userData)
+      const data = await response.json()
+
+      if (!response.ok) {
+        setError(data.message || "Login failed")
+        setLoading(false)
+        return
+      }
+
+      // Success - store JWT token and user data
+      localStorage.setItem('customerToken', data.token);
+      localStorage.setItem('customerData', JSON.stringify(data.user));
+
+      alert(data.message)
+      onLoginSuccess(data.user)
+      onClose()
+
+    } catch (error) {
+      console.error("Login error:", error)
+      setError("Network error. Please try again.")
+      setLoading(false)
+    }
   }
 
   return (
@@ -78,8 +108,8 @@ function Login({ onClose, onSwitchToSignup, onLoginSuccess }) {
             />
           </div>
 
-          <button type="submit" className="auth-submit-btn">
-            Login
+          <button type="submit" className="auth-submit-btn" disabled={loading}>
+            {loading ? "Logging in..." : "Login"}
           </button>
 
           <div className="auth-footer">

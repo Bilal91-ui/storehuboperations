@@ -10,6 +10,7 @@ const multer = require("multer");
 const path = require("path");
 const bcrypt = require("bcrypt");
 const nodemailer = require("nodemailer");
+const jwt = require("jsonwebtoken");
 
 console.log("Loaded NODE_ENV:", process.env.NODE_ENV);
 console.log("All env vars starting with NODE:", Object.keys(process.env).filter(key => key.startsWith('NODE')));
@@ -344,6 +345,292 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
+
+// ================= JWT AUTHENTICATION MIDDLEWARE =================
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+
+  if (!token) {
+    return res.status(401).json({ message: 'Access token required' });
+  }
+
+  jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key', (err, user) => {
+    if (err) {
+      return res.status(403).json({ message: 'Invalid or expired token' });
+    }
+    req.user = user;
+    next();
+  });
+};
+
+// ================= CUSTOMER SIGNUP =================
+app.post("/api/auth/customer/signup", async (req, res) => {
+  const { fullName, email, phone, password } = req.body;
+
+  if (!fullName || !email || !phone || !password) {
+    return res.status(400).json({ message: "All fields are required" });
+  }
+
+  if (password.length < 6) {
+    return res.status(400).json({ message: "Password must be at least 6 characters" });
+  }
+
+  try {
+    // Check if email already exists in the main users table
+    db.query("SELECT id FROM users WHERE email = ?", [email], async (err, rows) => {
+      if (err) return res.status(500).json({ message: "Database error", error: err.message });
+      if (rows.length > 0) {
+        return res.status(400).json({ message: "This email is already registered. Please login instead." });
+      }
+
+      // Check if there is already a pending signup for this email
+      db.query("SELECT id, expires_at FROM temp_registrations WHERE email = ?", [email], async (err, tempRows) => {
+        if (err) return res.status(500).json({ message: "Database error", error: err.message });
+
+        if (tempRows.length > 0) {
+          const tempRecord = tempRows[0];
+          const now = new Date();
+          const expiresAt = new Date(tempRecord.expires_at);
+
+          if (expiresAt > now) {
+            return res.status(400).json({
+              message: "A verification OTP has already been sent to this email. Please verify to complete signup."
+            });
+          }
+
+          // Expired pending signup can be removed and retried
+          db.query("DELETE FROM temp_registrations WHERE id = ?", [tempRecord.id], (deleteErr) => {
+            if (deleteErr) {
+              console.error("Error deleting expired temp registration:", deleteErr);
+            }
+          });
+        }
+
+        try {
+          const hash = await bcrypt.hash(password, 10);
+
+          // Get customer role ID
+          db.query("SELECT id FROM roles WHERE role_name = 'customer'", async (err, roleRows) => {
+            if (err || roleRows.length === 0) {
+              return res.status(500).json({ message: "Customer role not found" });
+            }
+
+            const roleId = roleRows[0].id;
+            const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+            // Store in temp table for OTP verification
+            const tempQuery = `
+              INSERT INTO temp_registrations (email, otp_code, user_data, expires_at) 
+              VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 10 MINUTE))
+              ON DUPLICATE KEY UPDATE 
+                otp_code = VALUES(otp_code), 
+                user_data = VALUES(user_data), 
+                expires_at = DATE_ADD(NOW(), INTERVAL 10 MINUTE)
+            `;
+
+            const userData = JSON.stringify({
+              fullName, email, phone, password_hash: hash, role_id: roleId
+            });
+
+            db.query(tempQuery, [email, otp, userData], async (err) => {
+              if (err) {
+                console.error("Temp Insert Error:", err);
+                return res.status(500).json({ message: "Registration failed" });
+              }
+
+              // Get temp ID
+              db.query("SELECT id FROM temp_registrations WHERE email = ?", [email], async (err, tempRowsAgain) => {
+                if (err) return res.status(500).json({ message: "Database error" });
+
+                const tempId = tempRowsAgain[0].id;
+
+                // Send Email OTP
+                try {
+                  if (typeof transporter !== "undefined") {
+                    await transporter.sendMail({
+                      from: process.env.EMAIL_USER,
+                      to: email,
+                      subject: "StoreHub - Email Verification OTP",
+                      text: `Your OTP code is ${otp}. It will expire in 10 minutes.`
+                    });
+                  }
+                } catch (mailErr) {
+                  console.error("Email send error:", mailErr.message);
+                }
+
+                console.log(`[DEV] Customer OTP for ${email}: ${otp}`);
+
+                res.json({
+                  message: "OTP sent to your email. Please verify to complete signup.",
+                  temp_id: tempId,
+                  otp: process.env.NODE_ENV !== 'production' ? otp : undefined
+                });
+              });
+            });
+          });
+        } catch (hashErr) {
+          return res.status(500).json({ message: "Error processing password" });
+        }
+      });
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ================= CUSTOMER OTP VERIFICATION =================
+app.post("/api/auth/customer/verify-otp", async (req, res) => {
+  const { temp_id, otp } = req.body;
+
+  if (!temp_id || !otp) {
+    return res.status(400).json({ message: "OTP is required" });
+  }
+
+  try {
+    db.query("SELECT * FROM temp_registrations WHERE id = ?", [temp_id], (err, rows) => {
+      if (err) return res.status(500).json({ message: "Database error" });
+      if (rows.length === 0) return res.status(400).json({ message: "Session expired. Please sign up again." });
+
+      const tempRecord = rows[0];
+
+      if (new Date() > new Date(tempRecord.expires_at)) {
+        db.query("DELETE FROM temp_registrations WHERE id = ?", [temp_id]);
+        return res.status(400).json({ message: "OTP has expired. Please sign up again." });
+      }
+
+      if (tempRecord.otp_code !== otp) {
+        return res.status(400).json({ message: "Invalid OTP" });
+      }
+
+      const userData = typeof tempRecord.user_data === 'string'
+        ? JSON.parse(tempRecord.user_data)
+        : tempRecord.user_data;
+
+      // Prevent duplicate account creation if the user was already registered separately
+      db.query("SELECT id FROM users WHERE email = ?", [userData.email], (err, existingUserRows) => {
+        if (err) {
+          console.error("Database error checking existing user:", err);
+          return res.status(500).json({ message: "Database error" });
+        }
+
+        if (existingUserRows.length > 0) {
+          db.query("DELETE FROM temp_registrations WHERE id = ?", [temp_id]);
+          return res.status(400).json({ message: "This email is already registered. Please login." });
+        }
+
+        // Create user account
+        const userQuery = "INSERT INTO users (email, password_hash, full_name, role_id, registration_status) VALUES (?, ?, ?, ?, 'approved')";
+        db.query(userQuery, [userData.email, userData.password_hash, userData.fullName, userData.role_id], (err, result) => {
+          if (err) {
+            console.error("User creation error:", err);
+            return res.status(500).json({ message: "Failed to create account" });
+          }
+
+          const userId = result.insertId;
+
+          // Mark email as verified
+          db.query("INSERT INTO email_verification (user_id, otp_code, is_verified, verified_at) VALUES (?, ?, TRUE, NOW())", [userId, otp]);
+
+          // Log registration event
+          db.query("INSERT INTO registration_events (user_id, event_type) VALUES (?, 'applied')", [userId]);
+          db.query("INSERT INTO registration_events (user_id, event_type) VALUES (?, 'email_verified')", [userId]);
+          db.query("INSERT INTO registration_events (user_id, event_type, notes) VALUES (?, 'approved', 'Auto-approved for customers')", [userId]);
+
+          // Clean up temp record
+          db.query("DELETE FROM temp_registrations WHERE id = ?", [temp_id]);
+
+          // Get user details for JWT
+          db.query("SELECT u.id, u.email, u.full_name, r.role_name FROM users u JOIN roles r ON u.role_id = r.id WHERE u.id = ?", [userId], (err, userRows) => {
+            if (err) {
+              console.error("Error fetching user details:", err);
+              return res.status(500).json({ message: "Account created but login failed" });
+            }
+
+            const user = userRows[0];
+            const token = jwt.sign(
+              { id: user.id, email: user.email, role: user.role_name },
+              process.env.JWT_SECRET || 'your-secret-key',
+              { expiresIn: '7d' }
+            );
+
+            res.json({
+              message: "Account created successfully! You are now logged in.",
+              token: token,
+              user: {
+                id: user.id,
+                email: user.email,
+                name: user.full_name,
+                role: user.role_name
+              }
+            });
+          });
+        });
+      });
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// ================= CUSTOMER LOGIN =================
+app.post("/api/auth/customer/login", async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({ message: "Email and password are required" });
+  }
+
+  try {
+    // Get user with role
+    db.query(`
+      SELECT u.id, u.email, u.password_hash, u.full_name, r.role_name
+      FROM users u
+      JOIN roles r ON u.role_id = r.id
+      WHERE u.email = ? AND u.registration_status = 'approved'
+    `, [email], async (err, rows) => {
+      if (err) {
+        console.error("Database error:", err);
+        return res.status(500).json({ message: "Database error" });
+      }
+
+      if (rows.length === 0) {
+        return res.status(401).json({ message: "Invalid email or password" });
+      }
+
+      const user = rows[0];
+
+      // Verify password
+      const isValidPassword = await bcrypt.compare(password, user.password_hash);
+      if (!isValidPassword) {
+        return res.status(401).json({ message: "Invalid email or password" });
+      }
+
+      // Generate JWT token
+      const token = jwt.sign(
+        { id: user.id, email: user.email, role: user.role_name },
+        process.env.JWT_SECRET || 'your-secret-key',
+        { expiresIn: '7d' }
+      );
+
+      res.json({
+        message: "Login successful",
+        token: token,
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.full_name,
+          role: user.role_name
+        }
+      });
+    });
+  } catch (error) {
+    console.error("Login error:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
 
 // ================= USER REGISTER (Partner Registration) =================
 app.post("/api/auth/register", async (req, res) => {
